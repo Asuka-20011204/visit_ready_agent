@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: visit-ready-agent
+  namespace: visit-ready
+  labels:
+    app.kubernetes.io/name: visit-ready-agent
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: visit-ready-agent
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

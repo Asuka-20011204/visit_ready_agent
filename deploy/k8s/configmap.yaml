@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: visit-ready-config
+  namespace: visit-ready
+  labels:
+    app.kubernetes.io/name: visit-ready-agent
+data:
+  APP_ADDR: ":8080"
+  APP_MODE: "live"
+  LLM_ENDPOINT: "https://api.openai.com/v1/chat/completions"
+  LLM_MODEL: "gpt-4.1-mini"
+  TAVILY_ENDPOINT: "https://api.tavily.com/search"
+  SESSION_TTL: "30m"
+  SESSION_CLEANUP_INTERVAL: "1m"
+  UPSTREAM_TIMEOUT: "25s"
+  HTTP_READ_HEADER_TIMEOUT: "5s"
+  HTTP_READ_TIMEOUT: "15s"
+  HTTP_WRITE_TIMEOUT: "60s"
+  HTTP_IDLE_TIMEOUT: "60s"
+  HTTP_SHUTDOWN_TIMEOUT: "55s"

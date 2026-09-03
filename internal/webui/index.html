@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="将脱敏后的健康描述整理成可核对、可导出的诊前沟通清单。">
+  <title>诊前序 · VisitReady Agent</title>
+  <link rel="icon" href="/assets/shield-check.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260903">
+  <script src="/assets/app.js?v=20260903b" defer></script>
+</head>
+<body data-mode="{{.Mode}}">
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="诊前序首页">
+      <span class="brand-mark"><img src="/assets/shield-check.svg" alt=""></span>
+      <span><strong>诊前序</strong><small>VISITREADY AGENT</small></span>
+    </a>
+    <div class="topbar-status">
+      {{if .Demo}}<span class="mode mode-demo"><span></span>离线演示 · 未调用 AI</span>{{else}}<span class="mode mode-live"><span></span>实时 AI</span>{{end}}
+      <span class="privacy-note">会话 30 分钟后自动清除</span>
+    </div>
+  </header>
+
+  {{if .Demo}}
+  <div class="demo-banner" role="status">
+    当前是断网兜底模式，仅演示完整流程，结果由本地规则生成。正式答辩请使用 <code>APP_MODE=live</code> 展示真实模型调用。
+  </div>
+  {{end}}
+
+  <main class="shell">
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">就诊沟通准备工具</p>
+      <h1 id="page-title">把零散描述，整理成一页能带走的就诊清单。</h1>
+      <p>只整理你明确提供的事实，不做诊断、不推荐用药。联网资料与个人事实始终分开。</p>
+      <div class="safety-strip">
+        <strong>紧急情况</strong>
+        <span>如出现严重呼吸困难、意识异常等情况，请立即联系当地急救服务。</span>
+      </div>
+    </section>
+
+    <div class="workspace">
+      <section class="input-pane" aria-labelledby="input-title">
+        <div class="section-heading">
+          <div><span class="step-number">01</span><h2 id="input-title">描述本次情况</h2></div>
+          <button class="text-button" id="sample-button" type="button">填入演示样例</button>
+        </div>
+        <label for="health-input">已脱敏的健康描述</label>
+        <textarea id="health-input" maxlength="6000" rows="12" placeholder="例如：三天前开始咳嗽，晚上更明显。昨晚测量体温 37.2℃。目前没有服药……"></textarea>
+        <div class="field-meta"><span>请勿填写姓名、电话、身份证号或详细地址</span><span id="char-count">0 / 6000</span></div>
+
+        <div class="setting-row">
+          <div>
+            <strong>检索可信公开资料</strong>
+            <small>仅发送通用医学术语，限定政府与公共卫生域名</small>
+          </div>
+          <label class="switch" aria-label="允许联网搜索">
+            <input id="search-toggle" type="checkbox" checked>
+            <span></span>
+          </label>
+        </div>
+
+        <label class="consent">
+          <input id="privacy-check" type="checkbox">
+          <span>我已检查并移除可直接识别个人身份的信息</span>
+        </label>
+
+        <button class="primary-button" id="start-button" type="button">
+          <img src="/assets/sparkles.svg" alt="">
+          <span>开始整理</span>
+        </button>
+        <p class="error-message" id="error-message" role="alert" hidden></p>
+      </section>
+
+      <section class="result-pane" aria-labelledby="result-title">
+        <div class="section-heading">
+          <div><span class="step-number">02</span><h2 id="result-title">核对与导出</h2></div>
+          <button class="icon-button" id="reset-button" type="button" title="重新开始" aria-label="重新开始" hidden>↺</button>
+        </div>
+
+        <div class="empty-state" id="empty-state">
+          <img src="/assets/clipboard-check.svg" alt="">
+          <h3>清单将在这里生成</h3>
+          <p>Agent 会依次提取事实、校验原文依据、按需追问，再生成沟通问题。</p>
+        </div>
+
+        <div id="working-state" class="working-state" hidden aria-live="polite">
+          <div class="spinner" aria-hidden="true"></div>
+          <div><strong>Agent 正在整理</strong><p>正在执行受约束的工作流，请稍候。</p></div>
+        </div>
+
+        <div id="session-view" hidden>
+          <ol class="agent-events" id="agent-events" aria-label="Agent 执行记录"></ol>
+
+          <section id="clarification-panel" class="clarification-panel" hidden>
+            <p class="section-label">需要补充一轮信息</p>
+            <div id="clarification-questions"></div>
+            <label for="clarification-input">你的补充</label>
+            <textarea id="clarification-input" maxlength="2000" rows="4" placeholder="只填写与问题相关的信息，仍请保持脱敏。"></textarea>
+            <button class="primary-button" id="clarify-button" type="button">提交补充并继续</button>
+          </section>
+
+          <div id="review-panel" hidden>
+            <div class="review-head">
+              <div><p class="section-label">人工核对</p><h3>确认每一项都来自你的描述</h3></div>
+              <span class="review-badge">等待确认</span>
+            </div>
+
+            <label for="visit-goal">本次就诊目标</label>
+            <input id="visit-goal" class="goal-input" maxlength="240">
+
+            <section class="result-section">
+              <h4>已提取事实 <span id="fact-count"></span></h4>
+              <div id="facts-list" class="facts-list"></div>
+            </section>
+
+            <section class="result-section">
+              <h4>准备向医生询问</h4>
+              <div id="questions-list" class="questions-list"></div>
+            </section>
+
+            <section class="result-section" id="sources-section" hidden>
+              <h4>可信参考资料 <span>不属于个人事实</span></h4>
+              <div id="sources-list" class="sources-list"></div>
+            </section>
+
+            <button class="primary-button confirm-button" id="confirm-button" type="button">
+              <img src="/assets/check.svg" alt="">
+              <span>我已核对，生成最终版</span>
+            </button>
+          </div>
+
+          <div id="completed-panel" class="completed-panel" hidden>
+            <img src="/assets/check.svg" alt="">
+            <div><strong>最终版已生成</strong><p>文件只包含你核对后的结构化信息。</p></div>
+            <a id="export-button" class="download-button" href="#" download="visit-ready.md"><img src="/assets/download.svg" alt="">下载 Markdown</a>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer><span>VisitReady Agent · 教学演示项目</span><span>不是医疗器械，不替代专业诊疗</span></footer>
+</body>
+</html>

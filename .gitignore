@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+bin/
+coverage.out
+coverage.html
+*_coverage.out
+/server
+*.exe
+*.log
+artifacts/
+VisitReady-Agent-答辩/
+*.pptx.inspect.ndjson
+playwright-report/
+test-results/
+.DS_Store
