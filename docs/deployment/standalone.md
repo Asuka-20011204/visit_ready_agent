@@ -7,14 +7,14 @@
 `.env` 至少配置 live 模式、模型、外部 MySQL DSN 和会话加密密钥。容器中的 `localhost` 指向容器自身；数据库在宿主机时，Docker Desktop 使用 `host.docker.internal`，Linux 使用私网地址或显式 Docker 网络。
 
 ```bash
-docker pull docker.io/asuka20011204/visit-ready-agent:1.0.2
+docker pull docker.io/asuka20011204/visit-ready-agent:1.0.3
 docker run -d --name visit-ready-agent --restart unless-stopped \
   --init --read-only --tmpfs /tmp:size=16m,mode=1777 \
   --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 128 \
   --stop-timeout 130 --env-file /opt/visit-ready/.env \
-  -e APP_ADDR=:8080 -e APP_VERSION=1.0.2 \
+  -e APP_ADDR=:8080 -e APP_VERSION=1.0.3 \
   -p 127.0.0.1:8097:8080 \
-  docker.io/asuka20011204/visit-ready-agent:1.0.2
+  docker.io/asuka20011204/visit-ready-agent:1.0.3
 ```
 
 ## 更新

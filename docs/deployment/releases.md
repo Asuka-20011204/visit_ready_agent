@@ -19,59 +19,66 @@ go vet ./...
 git add .
 git commit -m "feat: prepare visit ready release"
 git push origin main
-git tag v1.0.2
-git push origin v1.0.2
+git tag v1.0.3
+git push origin v1.0.3
 ```
 
 不要移动或覆盖已经发布的 tag。等待 `release-image` 工作流成功后，确认仓库出现：
 
 ```text
-docker.io/asuka20011204/visit-ready-agent:1.0.2
-ghcr.io/asuka-20011204/visit-ready-agent:1.0.2
+docker.io/asuka20011204/visit-ready-agent:1.0.3
+ghcr.io/asuka-20011204/visit-ready-agent:1.0.3
 ```
 
 发布工作流会生成 SBOM/provenance，并在 Job Summary 输出镜像 digest。记录该 digest 和 40 位提交 SHA；生产部署把它们传给一键脚本，脚本会校验镜像 OCI revision 并从同一提交下载 Compose。
 
 具体获取路径：打开 GitHub 仓库的 `Actions` -> `release-image` -> 对应成功版本 -> `Summary`。`publish` Job 对应 GHCR，`publish-dockerhub` Job 对应 Docker Hub。复制所选 Job 的 `Source commit` 与 `Published digest`；不要把一个仓库的 digest 用于另一个仓库。
 
-当前 `v1.0.2` 的记录如下：
+当前 `v1.0.3` 的记录如下：
 
 | 镜像仓库 | SourceCommit | ImageDigest |
 | --- | --- | --- |
-| Docker Hub（脚本默认） | `e03a9f67e2a17c32ab63501af033e7bb2ba8dd18` | `sha256:223fb854a7e644a0d25ac57a2392643e7e6fdf1ca6043277845f56220261229a` |
+| Docker Hub（脚本默认） | `fcc7021129d15cdaa9df75175559a0cf233c2c67` | `sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e` |
+| GHCR | `fcc7021129d15cdaa9df75175559a0cf233c2c67` | `sha256:bb5d0dcd644ecf1237dae869d22cc8697719e370ef47255b5a469421970ba916` |
+
+上一成功版本 `v1.0.2`：
+
+| 镜像仓库 | SourceCommit | ImageDigest |
+| --- | --- | --- |
+| Docker Hub | `e03a9f67e2a17c32ab63501af033e7bb2ba8dd18` | `sha256:223fb854a7e644a0d25ac57a2392643e7e6fdf1ca6043277845f56220261229a` |
 | GHCR | `e03a9f67e2a17c32ab63501af033e7bb2ba8dd18` | `sha256:91be2428135acdf6a6fd056ab2215386e4f96a8095896aad106f7389429cd0f0` |
 
 ## 本机手动发布 Docker Hub
 
 ```powershell
 docker login
-git tag v1.0.2
-git push origin v1.0.2
+git tag v1.0.3
+git push origin v1.0.3
 .\scripts\publish-release.ps1 `
-  -Version 1.0.2 `
+  -Version 1.0.3 `
   -RegistryImage docker.io/asuka20011204/visit-ready-agent `
   -Push
 ```
 
-脚本要求工作区干净、`v1.0.2` 正好指向当前完整提交且该 tag 已推送到 `origin`；任一 Git、Go 或 Docker 命令失败都会终止发布。Docker Hub 仓库应启用不可变标签策略，进一步防止覆盖已发布版本。
+脚本要求工作区干净、`v1.0.3` 正好指向当前完整提交且该 tag 已推送到 `origin`；任一 Git、Go 或 Docker 命令失败都会终止发布。Docker Hub 仓库应启用不可变标签策略，进一步防止覆盖已发布版本。
 
 ## 让其他机器更新
 
 其他机器不会因为仓库出现新镜像而自动替换运行中的容器。发布成功后，在每台机器明确执行对应更新命令：
 
 ```powershell
-$SourceCommit = '该版本的40位Git提交SHA'
-$ImageDigest = 'sha256:该版本的64位镜像摘要'
-.\bootstrap-windows.ps1 -Version 1.0.2 `
+$SourceCommit = 'fcc7021129d15cdaa9df75175559a0cf233c2c67'
+$ImageDigest = 'sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e'
+.\bootstrap-windows.ps1 -Version 1.0.3 `
   -ExpectedSourceCommit $SourceCommit `
   -ExpectedImageDigest $ImageDigest
 ```
 
 ```bash
-sudo env EXPECTED_SOURCE_COMMIT='该版本的40位提交SHA' \
-  EXPECTED_IMAGE_DIGEST='sha256:该版本的64位镜像摘要' \
+sudo env EXPECTED_SOURCE_COMMIT='fcc7021129d15cdaa9df75175559a0cf233c2c67' \
+  EXPECTED_IMAGE_DIGEST='sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e' \
   REGISTRY_IMAGE=docker.io/asuka20011204/visit-ready-agent \
-  ./bootstrap-server.sh 1.0.2
+  ./bootstrap-server.sh 1.0.3
 ```
 
 建议先升级测试机并完成账号登录、历史恢复和一次 Agent 流程，再分批升级生产机。不要使用定时拉取 `latest` 的 Watchtower 作为医疗数据服务默认更新策略，因为它绕过质量确认和迁移检查。
