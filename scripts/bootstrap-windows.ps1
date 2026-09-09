@@ -73,7 +73,7 @@ function Protect-SensitiveFile([string]$Path) {
         )
         $acl.AddAccessRule($rule)
     }
-    [IO.FileSystemAclExtensions]::SetAccessControl((Get-Item -LiteralPath $Path), $acl)
+    Set-PrivateAccessControl $Path $acl $false
 }
 
 function Protect-PrivateDirectory([string]$Path) {
@@ -93,7 +93,30 @@ function Protect-PrivateDirectory([string]$Path) {
         )
         $acl.AddAccessRule($rule)
     }
-    [IO.FileSystemAclExtensions]::SetAccessControl((Get-Item -LiteralPath $Path), $acl)
+    Set-PrivateAccessControl $Path $acl $true
+}
+
+function Set-PrivateAccessControl(
+    [string]$Path,
+    [Security.AccessControl.FileSystemSecurity]$Acl,
+    [bool]$IsDirectory
+) {
+    $extensions = ([System.Management.Automation.PSTypeName]'System.IO.FileSystemAclExtensions').Type
+    if ($null -ne $extensions) {
+        $targetType = if ($IsDirectory) { [System.IO.DirectoryInfo] } else { [System.IO.FileInfo] }
+        $aclType = if ($IsDirectory) { [Security.AccessControl.DirectorySecurity] } else { [Security.AccessControl.FileSecurity] }
+        $method = $extensions.GetMethod('SetAccessControl', [type[]]@($targetType, $aclType))
+        if ($null -ne $method) {
+            $target = if ($IsDirectory) { [System.IO.DirectoryInfo]::new($Path) } else { [System.IO.FileInfo]::new($Path) }
+            $method.Invoke($null, [object[]]@($target, $Acl)) | Out-Null
+            return
+        }
+    }
+    if ($IsDirectory) {
+        [System.IO.Directory]::SetAccessControl($Path, [Security.AccessControl.DirectorySecurity]$Acl)
+    } else {
+        [System.IO.File]::SetAccessControl($Path, [Security.AccessControl.FileSecurity]$Acl)
+    }
 }
 
 function New-Token([int]$ByteCount) {
