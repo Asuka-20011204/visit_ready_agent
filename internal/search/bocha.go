@@ -18,48 +18,52 @@ import (
 
 const maxResponseBytes = 1 << 20
 
-type TavilyClient struct {
+type BochaClient struct {
 	endpoint   string
 	apiKey     string
 	httpClient *http.Client
 }
 
-type tavilyRequest struct {
-	APIKey            string   `json:"api_key"`
-	Query             string   `json:"query"`
-	SearchDepth       string   `json:"search_depth"`
-	IncludeAnswer     bool     `json:"include_answer"`
-	IncludeRawContent bool     `json:"include_raw_content"`
-	MaxResults        int      `json:"max_results"`
-	IncludeDomains    []string `json:"include_domains"`
+type bochaRequest struct {
+	Query     string `json:"query"`
+	Summary   bool   `json:"summary"`
+	Freshness string `json:"freshness"`
+	Count     int    `json:"count"`
 }
 
-type tavilyResponse struct {
-	Results []struct {
-		Title   string `json:"title"`
-		URL     string `json:"url"`
-		Content string `json:"content"`
-	} `json:"results"`
+type bochaResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"msg"`
+	Data    struct {
+		WebPages struct {
+			Value []struct {
+				Name    string `json:"name"`
+				URL     string `json:"url"`
+				Snippet string `json:"snippet"`
+				Summary string `json:"summary"`
+			} `json:"value"`
+		} `json:"webPages"`
+	} `json:"data"`
 }
 
-func NewTavilyClient(endpoint, apiKey string, client *http.Client) (*TavilyClient, error) {
+func NewBochaClient(endpoint, apiKey string, client *http.Client) (*BochaClient, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Hostname() == "" {
-		return nil, errors.New("invalid Tavily endpoint")
+		return nil, errors.New("invalid bocha endpoint")
 	}
 	if parsed.Scheme != "https" && !isLoopback(parsed.Hostname()) {
-		return nil, errors.New("Tavily endpoint must use HTTPS")
+		return nil, errors.New("bocha endpoint must use HTTPS")
 	}
 	if strings.TrimSpace(apiKey) == "" {
-		return nil, errors.New("Tavily API key is required")
+		return nil, errors.New("bocha API key is required")
 	}
 	if client == nil {
 		return nil, errors.New("HTTP client is required")
 	}
-	return &TavilyClient{endpoint: endpoint, apiKey: apiKey, httpClient: client}, nil
+	return &BochaClient{endpoint: endpoint, apiKey: apiKey, httpClient: client}, nil
 }
 
-func (c *TavilyClient) Search(ctx context.Context, query string, allowedDomains []string) ([]domain.Source, error) {
+func (c *BochaClient) Search(ctx context.Context, query string, allowedDomains []string) ([]domain.Source, error) {
 	query = strings.TrimSpace(query)
 	if query == "" || len([]rune(query)) > 120 {
 		return nil, errors.New("search query must contain 1 to 120 characters")
@@ -71,23 +75,21 @@ func (c *TavilyClient) Search(ctx context.Context, query string, allowedDomains 
 		return nil, errors.New("at least one allowed domain is required")
 	}
 
-	payload, err := json.Marshal(tavilyRequest{
-		APIKey:            c.apiKey,
-		Query:             query,
-		SearchDepth:       "advanced",
-		IncludeAnswer:     false,
-		IncludeRawContent: false,
-		MaxResults:        5,
-		IncludeDomains:    append([]string(nil), allowedDomains...),
+	payload, err := json.Marshal(bochaRequest{
+		Query:     query,
+		Summary:   true,
+		Freshness: "noLimit",
+		Count:     5,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("encode Tavily request: %w", err)
+		return nil, fmt.Errorf("encode Bocha request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("create Tavily request: %w", err)
+		return nil, fmt.Errorf("create Bocha request: %w", err)
 	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
@@ -100,14 +102,18 @@ func (c *TavilyClient) Search(ctx context.Context, query string, allowedDomains 
 		return nil, fmt.Errorf("search provider returned status %d", resp.StatusCode)
 	}
 
-	var decoded tavilyResponse
+	var decoded bochaResponse
 	decoder := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes))
 	if err := decoder.Decode(&decoded); err != nil {
-		return nil, fmt.Errorf("decode Tavily response: %w", err)
+		return nil, fmt.Errorf("decode Bocha response: %w", err)
+	}
+	if decoded.Code != 0 && decoded.Code != http.StatusOK {
+		return nil, fmt.Errorf("search provider returned code %d", decoded.Code)
 	}
 
-	sources := make([]domain.Source, 0, len(decoded.Results))
-	for _, result := range decoded.Results {
+	results := decoded.Data.WebPages.Value
+	sources := make([]domain.Source, 0, len(results))
+	for _, result := range results {
 		if !guard.IsAllowedSourceURL(result.URL, allowedDomains) {
 			continue
 		}
@@ -116,11 +122,15 @@ func (c *TavilyClient) Search(ctx context.Context, query string, allowedDomains 
 			continue
 		}
 		domainName := guard.MatchAllowedDomain(parsed.Hostname(), allowedDomains)
+		snippet := strings.TrimSpace(result.Summary)
+		if snippet == "" {
+			snippet = strings.TrimSpace(result.Snippet)
+		}
 		sources = append(sources, domain.Source{
-			Title:   truncate(strings.TrimSpace(result.Title), 180),
+			Title:   truncate(strings.TrimSpace(result.Name), 180),
 			URL:     result.URL,
 			Domain:  domainName,
-			Snippet: truncate(strings.TrimSpace(result.Content), 1200),
+			Snippet: truncate(snippet, 1200),
 		})
 	}
 	return sources, nil

@@ -2,6 +2,8 @@
 .env.*
 !.env.example
 bin/
+node_modules/
+coverage
 coverage.out
 coverage.html
 *_coverage.out
