@@ -17,7 +17,7 @@ sudo env INSTALL_DOCKER=true \
   EXPECTED_SOURCE_COMMIT="$SOURCE_COMMIT" \
   EXPECTED_IMAGE_DIGEST="$IMAGE_DIGEST" \
   REGISTRY_IMAGE=docker.io/asuka20011204/visit-ready-agent \
-  ./bootstrap-server.sh 1.0.1
+  ./bootstrap-server.sh 1.0.2
 ```
 
 `INSTALL_DOCKER=true` 会通过系统包安装 Docker Engine 与 Compose v2，目前仅支持已验证的 Ubuntu。Debian 和其他发行版先按 Docker 官方文档安装，再去掉该参数运行；部署、更新和回退逻辑本身不限制发行版。
@@ -29,7 +29,7 @@ sudo env INSTALL_DOCKER=true \
 ```bash
 sudo env APP_MODE=demo \
   REGISTRY_IMAGE=docker.io/asuka20011204/visit-ready-agent \
-  ./bootstrap-server.sh 1.0.1
+  ./bootstrap-server.sh 1.0.2
 ```
 
 Demo 和 live 必须使用不同的 `INSTALL_DIR`；已有部署不会被脚本静默切换模式。
@@ -62,7 +62,7 @@ sudo env EXPECTED_SOURCE_COMMIT='1.1.0对应的40位提交SHA' \
 sudo env EXPECTED_IMAGE_DIGEST='sha256:旧版本的64位摘要' \
   EXPECTED_SOURCE_COMMIT='旧版本对应的40位Git提交SHA' \
   REGISTRY_IMAGE=docker.io/asuka20011204/visit-ready-agent \
-  ./bootstrap-server.sh 1.0.1
+  ./bootstrap-server.sh 1.0.2
 ```
 
 一键脚本会核对镜像 OCI revision，并从该精确提交下载 Compose。公网 live 模式强制同时提供 SHA 与 digest；离线 demo 可省略。

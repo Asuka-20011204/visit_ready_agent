@@ -12,7 +12,7 @@ Invoke-WebRequest `
   "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/$SourceCommit/scripts/bootstrap-windows.ps1" `
   -OutFile bootstrap-windows.ps1
 Set-ExecutionPolicy -Scope Process Bypass
-.\bootstrap-windows.ps1 -Version 1.0.1 -Mode demo
+.\bootstrap-windows.ps1 -Version 1.0.2 -Mode demo
 ```
 
 打开 `http://127.0.0.1:8097`。Demo 不调用模型，不创建账户，适合先确认界面和容器环境。
@@ -20,7 +20,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 ## 首次 Live
 
 ```powershell
-.\bootstrap-windows.ps1 -Version 1.0.1 -Mode live
+.\bootstrap-windows.ps1 -Version 1.0.2 -Mode live
 ```
 
 脚本会依次安全询问模型端点、模型密钥、模型名和可选博查密钥，自动生成 MySQL 密码与会话加密密钥。配置和 Compose 文件默认保存在 `%LOCALAPPDATA%\VisitReady`。
@@ -38,7 +38,7 @@ Invoke-WebRequest `
   "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/$SourceCommit/scripts/bootstrap-windows.ps1" `
   -OutFile bootstrap-windows.ps1
 Set-ExecutionPolicy -Scope Process Bypass
-.\bootstrap-windows.ps1 -Version 1.0.1 -Mode live `
+.\bootstrap-windows.ps1 -Version 1.0.2 -Mode live `
   -AuthCookieSecure $true `
   -ExpectedSourceCommit $SourceCommit `
   -ExpectedImageDigest $ImageDigest
@@ -57,7 +57,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 脚本保留原 `.env` 与 MySQL 卷，拉取并切换新镜像，只有 `/readyz` 成功后才写入新版本号。失败会尝试恢复上一应用版本。手动回退同样重跑旧版本：
 
 ```powershell
-.\bootstrap-windows.ps1 -Version 1.0.1
+.\bootstrap-windows.ps1 -Version 1.0.2
 ```
 
 应用回退不等于数据库回退。涉及不兼容迁移时，先按 [运维手册](runbook.md) 备份并验证恢复。
@@ -67,7 +67,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 ## 自定义目录或端口
 
 ```powershell
-.\bootstrap-windows.ps1 -Version 1.0.1 -Mode live `
+.\bootstrap-windows.ps1 -Version 1.0.2 -Mode live `
   -InstallDir 'D:\VisitReady' -AppPort 9007
 ```
 

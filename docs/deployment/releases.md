@@ -19,15 +19,15 @@ go vet ./...
 git add .
 git commit -m "feat: prepare visit ready release"
 git push origin main
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1.0.2
+git push origin v1.0.2
 ```
 
 不要移动或覆盖已经发布的 tag。等待 `release-image` 工作流成功后，确认仓库出现：
 
 ```text
-docker.io/asuka20011204/visit-ready-agent:1.0.1
-ghcr.io/asuka-20011204/visit-ready-agent:1.0.1
+docker.io/asuka20011204/visit-ready-agent:1.0.2
+ghcr.io/asuka-20011204/visit-ready-agent:1.0.2
 ```
 
 发布工作流会生成 SBOM/provenance，并在 Job Summary 输出镜像 digest。记录该 digest 和 40 位提交 SHA；生产部署把它们传给一键脚本，脚本会校验镜像 OCI revision 并从同一提交下载 Compose。
@@ -36,15 +36,15 @@ ghcr.io/asuka-20011204/visit-ready-agent:1.0.1
 
 ```powershell
 docker login
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1.0.2
+git push origin v1.0.2
 .\scripts\publish-release.ps1 `
-  -Version 1.0.1 `
+  -Version 1.0.2 `
   -RegistryImage docker.io/asuka20011204/visit-ready-agent `
   -Push
 ```
 
-脚本要求工作区干净、`v1.0.1` 正好指向当前完整提交且该 tag 已推送到 `origin`；任一 Git、Go 或 Docker 命令失败都会终止发布。Docker Hub 仓库应启用不可变标签策略，进一步防止覆盖已发布版本。
+脚本要求工作区干净、`v1.0.2` 正好指向当前完整提交且该 tag 已推送到 `origin`；任一 Git、Go 或 Docker 命令失败都会终止发布。Docker Hub 仓库应启用不可变标签策略，进一步防止覆盖已发布版本。
 
 ## 让其他机器更新
 
@@ -53,7 +53,7 @@ git push origin v1.0.1
 ```powershell
 $SourceCommit = '该版本的40位Git提交SHA'
 $ImageDigest = 'sha256:该版本的64位镜像摘要'
-.\bootstrap-windows.ps1 -Version 1.0.1 `
+.\bootstrap-windows.ps1 -Version 1.0.2 `
   -ExpectedSourceCommit $SourceCommit `
   -ExpectedImageDigest $ImageDigest
 ```
@@ -62,7 +62,7 @@ $ImageDigest = 'sha256:该版本的64位镜像摘要'
 sudo env EXPECTED_SOURCE_COMMIT='该版本的40位提交SHA' \
   EXPECTED_IMAGE_DIGEST='sha256:该版本的64位镜像摘要' \
   REGISTRY_IMAGE=docker.io/asuka20011204/visit-ready-agent \
-  ./bootstrap-server.sh 1.0.1
+  ./bootstrap-server.sh 1.0.2
 ```
 
 建议先升级测试机并完成账号登录、历史恢复和一次 Agent 流程，再分批升级生产机。不要使用定时拉取 `latest` 的 Watchtower 作为医疗数据服务默认更新策略，因为它绕过质量确认和迁移检查。
