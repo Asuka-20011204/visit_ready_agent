@@ -23,7 +23,7 @@ git tag v1.0.3
 git push origin v1.0.3
 ```
 
-不要移动或覆盖已经发布的 tag。等待 `release-image` 工作流成功后，确认仓库出现：
+不要移动或覆盖已经发布的 tag。`v1.0.3` 已经发布，后续修复必须使用新标签（例如 `v1.0.4`）。等待 `release-image` 工作流成功后，确认仓库出现：
 
 ```text
 docker.io/asuka20011204/visit-ready-agent:1.0.3

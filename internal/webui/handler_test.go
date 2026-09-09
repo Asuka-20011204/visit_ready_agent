@@ -339,7 +339,7 @@ func TestShortEmergencyTextIsNotBlockedByClientSideLengthValidation(t *testing.T
 
 func TestDocumentUsesCurrentVersionedSafetyAssets(t *testing.T) {
 	document := servedBody(t, newHandler(t, "live"), "/")
-	for _, asset := range []string{"/assets/styles.css?v=20260908e", "/assets/session-state.js?v=20260908f", "/assets/network.js?v=20260908g", "/assets/app.js?v=20260908g"} {
+	for _, asset := range []string{"/assets/styles.css?v=20260910x", "/assets/session-state.js?v=20260910n", "/assets/network.js?v=20260908g", "/assets/app.js?v=20260910x"} {
 		if !strings.Contains(document, asset) {
 			t.Fatalf("document does not reference current safety asset %q", asset)
 		}
@@ -438,8 +438,8 @@ func TestApprovedUIRequiresIndividualFactVerification(t *testing.T) {
 
 	for _, contract := range []string{
 		"function renderFacts(facts)",
-		`checkbox.type = "checkbox"`,
-		`checkbox.setAttribute("aria-label", `,
+		`verification.type = "checkbox"`,
+		`verification.setAttribute("aria-label", `,
 		"fact-verification",
 		"verifiedFactIDs",
 		"reviewFacts.every",
@@ -641,6 +641,22 @@ func TestApprovedUIOffersInlineRecoveryForFailedAgentRuns(t *testing.T) {
 	for _, marker := range []string{"/retry`,", `session.status === "failed"`, "retryable", "agent_processing_failed", "未通过完整安全校验"} {
 		if !strings.Contains(scripts, marker) {
 			t.Fatalf("scripts missing recovery behavior %q", marker)
+		}
+	}
+}
+
+func TestFailedAndWorkingStatesKeepAUsableComposer(t *testing.T) {
+	script := servedBody(t, newHandler(t, "live"), "/assets/app.js")
+	for _, contract := range []string{
+		"function composerModeForSession(session)",
+		`case "failed":`,
+		`return session.failure?.retryable ? "failed" : "initial"`,
+		`ui.inputForm.hidden = mode !== "initial" && mode !== "failed"`,
+		"renderComposerMode(composerModeForSession(currentSession))",
+		"renderComposerMode(composerModeForSession(session))",
+	} {
+		if !strings.Contains(script, contract) {
+			t.Fatalf("composer recovery is missing %q", contract)
 		}
 	}
 }

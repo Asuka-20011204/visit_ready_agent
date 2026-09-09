@@ -14,6 +14,7 @@ async function reachReview(page) {
   await waitForAgent(page);
 
   for (let round = 0; round < 4 && await page.locator("#clarification-panel").isVisible(); round += 1) {
+    await expect(page.locator("#clarification-input")).toBeEditable();
     await page.locator("#clarification-input").fill(clarification);
     await page.locator("#clarify-button").click();
     await waitForAgent(page);
@@ -31,6 +32,8 @@ test("creates, restores, and permanently deletes an owned session", async ({ pag
 
   await reachReview(page);
   await expect(page.locator("#facts-list")).toContainText("心悸");
+  await expect(page.locator("#clarification-form")).toBeHidden();
+  await expect(page.locator("#input-form")).toBeHidden();
   await expect(page.locator("#history-list .history-item")).toHaveCount(1);
 
   await page.reload();

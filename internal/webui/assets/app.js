@@ -161,7 +161,11 @@ ui.copyDeviceKey?.addEventListener("click", copyDeviceKey);
 ui.importDeviceKey?.addEventListener("click", importDeviceKey);
 ui.accountForm?.addEventListener("submit", event => { event.preventDefault(); submitAccountForm(); });
 ui.accountModeButton?.addEventListener("click", toggleAccountMode);
-ui.accountButton?.addEventListener("click", () => { ui.accountMenuEmail.textContent = currentAccount?.email || ""; ui.accountMenuDialog.showModal(); });
+ui.accountButton?.addEventListener("click", () => {
+  if (!currentAccount) { ui.accountDialog.showModal(); return; }
+  ui.accountMenuEmail.textContent = currentAccount.email || "";
+  ui.accountMenuDialog.showModal();
+});
 ui.accountLogout?.addEventListener("click", logoutAccount);
 ui.accountMenuClose?.addEventListener("click", () => ui.accountMenuDialog.close());
 ui.export.addEventListener("click", event => downloadSessionExport(event, "visit-ready.md"));
@@ -361,19 +365,26 @@ function renderSession(session, options = {}) {
     ui.export.href = `/api/v1/sessions/${session.id}/export`;
     ui.completed.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "nearest" });
   }
-  renderComposerMode(emergency ? "emergency" : failed ? "failed" : waiting ? "clarification" : session.status === "waiting_review" ? "review" : session.status === "completed" ? "completed" : "hidden");
-  if (waiting) revealLatestConversation();
+  renderComposerMode(composerModeForSession(session));
+  if (waiting || reviewing) revealLatestConversation();
   ui.liveAnnouncer.textContent = emergency ? "已进入紧急安全处理，请立即联系当地急救服务或前往急诊。" : failed ? "处理暂时中断，本次内容已保留。" : session.status === "completed" ? "诊前清单已经准备好。" : waiting ? "Agent 需要你补充一轮信息。" : "Agent 已完成整理，等待你核对事实。";
   renderHistory();
 }
 
 function revealLatestConversation() {
-  requestAnimationFrame(() => {
-    ui.threadViewport.scrollTo({
+  window.setTimeout(() => {
+    const root = ui.threadViewport;
+    const target = !ui.review.hidden ? (ui.review.querySelector(".artifact-head") || ui.review) : (!ui.clarificationPanel.hidden ? ui.clarificationPanel : null);
+    if (target && root) {
+      const top = target.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop - 16;
+      root.scrollTo({ top: Math.max(0, top), behavior: reducedMotion() ? "auto" : "smooth" });
+      return;
+    }
+    root.scrollTo({
       top: ui.threadViewport.scrollHeight,
       behavior: reducedMotion() ? "auto" : "smooth"
     });
-  });
+  }, 80);
 }
 
 function renderConversationSummary(summary, interview) {
@@ -460,33 +471,41 @@ function renderFacts(facts) {
     const row = document.createElement("div");
     row.className = "fact-row";
     row.dataset.factId = fact.id;
+    const mark = document.createElement("span");
+    mark.className = "fact-mark";
+    mark.setAttribute("aria-hidden", "true");
+    const content = document.createElement("div");
     const category = document.createElement("span");
     category.className = "fact-category";
     category.textContent = categoryLabels[fact.category] || "其他";
-    const content = document.createElement("div");
     const value = document.createElement("p");
     value.className = "fact-content";
     value.textContent = fact.content;
-    const quote = document.createElement("p");
-    quote.className = "fact-quote";
-    quote.textContent = `原文依据：${fact.source_quote}`;
-    content.append(value, quote);
-    const verification = document.createElement("label");
+    content.append(category, value);
+    const quoteText = String(fact.source_quote || "").trim();
+    if (quoteText && quoteText !== String(fact.content || "").trim()) {
+      const quote = document.createElement("p");
+      quote.className = "fact-quote";
+      quote.textContent = `原文依据：${quoteText}`;
+      content.append(quote);
+    }
+    const verification = document.createElement("input");
+    verification.type = "checkbox";
     verification.className = "fact-verification";
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.id = `fact-verification-${fact.id}`;
-    checkbox.setAttribute("aria-label", `核对事实：${fact.content}`);
-    checkbox.checked = verifiedFactIDs.has(fact.id);
-    checkbox.disabled = currentSession?.status === "completed";
-    checkbox.addEventListener("change", () => {
-      if (checkbox.checked) verifiedFactIDs.add(fact.id); else verifiedFactIDs.delete(fact.id);
+    verification.id = `fact-verification-${fact.id}`;
+    verification.setAttribute("aria-label", `核对事实：${fact.content}`);
+    verification.checked = verifiedFactIDs.has(fact.id);
+    verification.disabled = currentSession?.status === "completed";
+    verification.addEventListener("change", () => {
+      if (verification.checked) verifiedFactIDs.add(fact.id); else verifiedFactIDs.delete(fact.id);
       updateReviewProgress(normalizedFacts);
     });
-    const label = document.createElement("span");
-    label.textContent = "已核对";
-    verification.append(checkbox, label);
-    row.append(category, content, verification);
+    row.append(mark, content, verification);
+    row.addEventListener("click", event => {
+      if (event.target === verification || verification.disabled) return;
+      verification.checked = !verification.checked;
+      verification.dispatchEvent(new Event("change"));
+    });
     return row;
   }));
   updateReviewProgress(normalizedFacts);
@@ -630,9 +649,28 @@ function renderSources(sources) {
     return row;
   }));
 }
+function composerModeForSession(session) {
+  if (!session) return "initial";
+  switch (session.status) {
+    case "emergency":
+      return "emergency";
+    case "failed":
+      return session.failure?.retryable ? "failed" : "initial";
+    case "waiting_clarification":
+      return "clarification";
+    case "waiting_review":
+      return "review";
+    case "completed":
+      return "completed";
+    default:
+      return "hidden";
+  }
+}
+
 function renderComposerMode(mode) {
-  ui.inputForm.hidden = mode !== "initial";
+  ui.inputForm.hidden = mode !== "initial" && mode !== "failed";
   ui.clarificationForm.hidden = mode !== "clarification";
+  if (ui.reviewActions) ui.reviewActions.hidden = mode !== "review";
   const labels = {
     initial: "等待你的描述",
     clarification: "等待补充信息",
@@ -644,6 +682,7 @@ function renderComposerMode(mode) {
   };
   ui.composerState.textContent = labels[mode] || labels.hidden;
   if (mode === "clarification") requestAnimationFrame(() => ui.clarificationInput.focus({ preventScroll: true }));
+  if (mode === "initial" || mode === "failed") requestAnimationFrame(() => ui.input.focus({ preventScroll: true }));
 }
 
 function setWorking(active, button) {
@@ -656,14 +695,11 @@ function setWorking(active, button) {
     ui.composerState.textContent = "Agent 正在处理";
     startWorkingTimer();
     renderComposerMode("hidden");
-  } else {
-    stopWorkingTimer();
-    if (activeWorkingButton === button) activeWorkingButton = null;
+    return;
   }
-  if (!active && currentSession) {
-    const mode = currentSession.status === "emergency" ? "emergency" : currentSession.status === "failed" ? "failed" : currentSession.status === "waiting_clarification" ? "clarification" : currentSession.status === "waiting_review" ? "review" : currentSession.status === "completed" ? "completed" : "hidden";
-    ui.composerState.textContent = ({ emergency: "已停止 Agent 流程，请立即寻求紧急帮助", failed: "处理已暂停，可以重新尝试", clarification: "等待补充信息", review: "等待事实核对", completed: "本次整理已完成", hidden: "Agent 上下文已暂停" })[mode];
-  }
+  stopWorkingTimer();
+  if (activeWorkingButton === button) activeWorkingButton = null;
+  renderComposerMode(composerModeForSession(currentSession));
 }
 
 function startWorkingTimer() {
@@ -807,7 +843,7 @@ function reducedMotion() {
 function showAccount(account) {
   currentAccount = account;
   ui.accountButton.hidden = false;
-  ui.accountEmail.textContent = account?.email || "账户";
+  ui.accountEmail.textContent = account?.email || "登录账户";
 }
 
 function toggleAccountMode() {
@@ -847,7 +883,8 @@ async function logoutAccount() {
   await fetch("/api/v1/auth/logout", { method: "POST", credentials: "same-origin" });
   ui.accountMenuDialog.close();
   currentAccount = null;
-  ui.accountButton.hidden = true;
+  ui.accountButton.hidden = false;
+  ui.accountEmail.textContent = "登录账户";
   resetWorkspace();
   ui.accountDialog.showModal();
 }

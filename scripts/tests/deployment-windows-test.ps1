@@ -17,6 +17,9 @@ if ($scriptText -notmatch 'System\.IO\.File\]::SetAccessControl' -or $scriptText
 if ($scriptText -notmatch '--wait' -or $scriptText -notmatch '--wait-timeout') {
     throw 'Bootstrap script dumps MySQL before waiting for database health.'
 }
+if ($scriptText -notmatch 'Test-Path -LiteralPath \$markerFile' -or $scriptText -notmatch 'deployment-success') {
+    throw 'Bootstrap script may dump MySQL on a first live install that has no previous deployment.'
+}
 
 function global:docker {
     $arguments = @($args | ForEach-Object { [string]$_ })
@@ -164,6 +167,18 @@ try {
         'APP_VERSION=1.0.1', 'MYSQL_PASSWORD=mock_password_123',
         'SESSION_ENCRYPTION_KEY=QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI'
     ))
+    $freshLiveDir = Join-Path $testRoot 'fresh-live'
+    New-Item -ItemType Directory -Path $freshLiveDir | Out-Null
+    Copy-Item (Join-Path $liveDir 'compose.yaml') (Join-Path $freshLiveDir 'compose.yaml')
+    Copy-Item (Join-Path $liveDir 'compose.mysql.yaml') (Join-Path $freshLiveDir 'compose.mysql.yaml')
+    Copy-Item (Join-Path $liveDir '.env') (Join-Path $freshLiveDir '.env')
+    & (Join-Path $repoRoot 'scripts/bootstrap-windows.ps1') `
+        -Version 1.0.3 -InstallDir $freshLiveDir -ReadyTimeoutSeconds 1 `
+        -ExpectedSourceCommit $sourceCommit -ExpectedImageDigest ('sha256:' + ('0' * 64))
+    if (Test-Path (Join-Path $freshLiveDir 'backups')) {
+        throw 'First live install created a MySQL dump before any previous database existed.'
+    }
+
     [IO.File]::WriteAllText((Join-Path $liveDir '.deployment-success'), '1.0.1')
     & (Join-Path $repoRoot 'scripts/bootstrap-windows.ps1') `
         -Version 1.0.3 -InstallDir $liveDir -ReadyTimeoutSeconds 1 `

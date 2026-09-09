@@ -102,6 +102,8 @@ async function ensureAccountSession() {
 	try {
 		const response = await fetch("/api/v1/auth/me", { method: "GET", credentials: "same-origin" });
 		if (!response.ok) {
+			ui.accountButton.hidden = false;
+			ui.accountEmail.textContent = "登录账户";
 			ui.accountDialog.showModal();
 			return false;
 		}

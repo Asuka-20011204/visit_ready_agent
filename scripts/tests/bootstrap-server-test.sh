@@ -126,6 +126,19 @@ APP_VERSION=1.0.1
 MYSQL_PASSWORD=mock_password_123
 SESSION_ENCRYPTION_KEY=QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI
 EOF
+FRESH_LIVE_DIR="$TEST_ROOT/fresh-live"
+mkdir -p "$FRESH_LIVE_DIR"
+cp "$LIVE_DIR/compose.yaml" "$FRESH_LIVE_DIR/compose.yaml"
+cp "$LIVE_DIR/compose.mysql.yaml" "$FRESH_LIVE_DIR/compose.mysql.yaml"
+cp "$LIVE_DIR/.env" "$FRESH_LIVE_DIR/.env"
+INSTALL_DIR="$FRESH_LIVE_DIR" \
+EXPECTED_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+EXPECTED_IMAGE_DIGEST="sha256:$(printf '%064d' 0)" \
+  "$ROOT/scripts/bootstrap-server.sh" 1.0.3 >/dev/null
+if [[ -d "$FRESH_LIVE_DIR/backups" ]]; then
+  echo 'first live install created a MySQL dump before any previous database existed' >&2
+  exit 1
+fi
 printf '1.0.1\n' > "$LIVE_DIR/.deployment-success"
 INSTALL_DIR="$LIVE_DIR" \
 EXPECTED_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \

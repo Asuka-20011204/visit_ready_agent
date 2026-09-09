@@ -62,6 +62,10 @@ type Runner struct {
 type workflowState struct {
 	Session       domain.Session
 	SearchQueries []string
+	priorFacts    []domain.Fact
+	priorProfiles []domain.SymptomProfile
+	priorTimeline []domain.TimelineEvent
+	priorGoal     string
 }
 
 func NewRunner(cfg Config) (*Runner, error) {

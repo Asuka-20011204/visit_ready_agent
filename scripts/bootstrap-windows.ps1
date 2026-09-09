@@ -262,7 +262,7 @@ try {
         $rollbackDir = Join-Path $InstallDir '.rollback'
         New-Item -ItemType Directory -Force -Path $rollbackDir | Out-Null
         Protect-PrivateDirectory $rollbackDir
-        $hasPrevious = $previousVersion -and (Test-Path -LiteralPath (Join-Path $InstallDir 'compose.yaml'))
+        $hasPrevious = $previousVersion -and (Test-Path -LiteralPath $markerFile) -and (Test-Path -LiteralPath (Join-Path $InstallDir 'compose.yaml'))
         foreach ($name in @('compose.yaml', 'compose.mysql.yaml')) {
             $existing = Join-Path $InstallDir $name
             if (Test-Path -LiteralPath $existing) { Copy-Item $existing (Join-Path $rollbackDir $name) -Force }
@@ -283,7 +283,7 @@ try {
             Protect-PrivateDirectory $backupDir
             $backupName = "visitready-before-$Version-$((Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')).sql"
             $backupFile = Join-Path $backupDir $backupName
-            $dumpCommand = 'MYSQL_PWD="$MYSQL_PASSWORD" mysqldump --single-transaction --skip-lock-tables -uvisitready visitready > /tmp/visitready-pre-update.sql'
+            $dumpCommand = 'MYSQL_PWD="$MYSQL_PASSWORD" mysqldump --protocol=TCP -h 127.0.0.1 --single-transaction --skip-lock-tables -uvisitready visitready > /tmp/visitready-pre-update.sql'
             Invoke-Docker ($oldCompose + @('exec', '-T', 'db', 'sh', '-c', $dumpCommand)) | Out-Null
             Invoke-Docker ($oldCompose + @('cp', 'db:/tmp/visitready-pre-update.sql', $backupFile)) | Out-Null
             Invoke-Docker ($oldCompose + @('exec', '-T', 'db', 'rm', '-f', '/tmp/visitready-pre-update.sql')) | Out-Null

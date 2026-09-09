@@ -76,6 +76,8 @@ $ImageDigest = 'sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437e
 
 打开 `http://127.0.0.1:8097`，创建邮箱账户，再按仓库 README 的完整演示流程操作。本机 HTTP 使用 `AUTH_COOKIE_SECURE=false`；不要把该设置复制到公网。
 
+首次 live **不会**备份 MySQL。只有目录里已有 `.deployment-success` 时，脚本才会等待数据库健康，并用 TCP 连接 `127.0.0.1` 做升级前 dump。不要用镜像构建提交去下载安装脚本。
+
 ## 把已有 Live 升到 1.0.3
 
 已有 `%LOCALAPPDATA%\VisitReady` 且 `APP_MODE=live` 时，不要改 `.env`。先重新下载 `main` 上的安装脚本，再升级镜像：
@@ -109,6 +111,23 @@ Set-ExecutionPolicy -Scope Process Bypass
 docker compose -f "$env:LOCALAPPDATA\VisitReady\compose.yaml" -f "$env:LOCALAPPDATA\VisitReady\compose.mysql.yaml" ps
 Invoke-RestMethod http://127.0.0.1:8097/readyz
 ```
+
+## 常见失败
+
+如果安装停在：
+
+```text
+mysqldump: Got error: 2002: Can't connect to local MySQL server through socket '/var/run/mysqld/mysqld.sock'
+```
+
+说明当时用的是旧安装脚本：它会在首次 live 或 MySQL 未就绪时备份，并且走 Unix socket。处理方式：
+
+1. 重新从 `main` 下载 `bootstrap-windows.ps1`，不要用某个历史 `SourceCommit` 去下载脚本。
+2. 确认 `%LOCALAPPDATA%\VisitReady\.env` 仍在；不要删除会话加密密钥。
+3. 再次执行同一版本的 live 命令。首次安装应直接启动 `db` 和应用；只有已成功部署过的目录才会备份。
+4. 备份命令现在是 `mysqldump --protocol=TCP -h 127.0.0.1`，并先执行 `docker compose up -d --wait db`。
+
+第二轮补充输入框被藏住，属于应用镜像缺陷，不是安装脚本问题。需要发布包含该修复的新镜像后再升级应用版本；只重跑 `v1.0.3` 不会带上前端修复。
 
 ## 公网 Live
 

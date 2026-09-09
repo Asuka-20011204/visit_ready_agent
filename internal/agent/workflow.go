@@ -67,10 +67,20 @@ func (r *Runner) extractNode(ctx context.Context, state workflowState) (workflow
 	next := cloneWorkflowState(state)
 	next.Session.Status = domain.StatusExtracting
 	next.Session = r.addEvent(next.Session, "extract", "running", "正在提取用户明确提供的事实")
+	if next.Session.ClarificationCount > 0 {
+		next.priorFacts = append([]domain.Fact(nil), next.Session.Facts...)
+		next.priorProfiles = cloneSymptomProfiles(next.Session.SymptomProfiles)
+		next.priorTimeline = append([]domain.TimelineEvent(nil), next.Session.Timeline...)
+		next.priorGoal = next.Session.VisitGoal
+	}
 
 	input := extractionInput(next.Session)
 	extraction, err := r.llm.Extract(ctx, input)
 	if err != nil {
+		if len(next.priorFacts) > 0 && !isRetryableRunError(err) {
+			next.Session = r.addEvent(next.Session, "extract", "degraded", "本轮提取未能形成新的可核对事实，已保留已确认信息")
+			return next, nil
+		}
 		return workflowState{}, fmt.Errorf("extract facts: %w", err)
 	}
 	next.Session.VisitGoal = strings.TrimSpace(extraction.VisitGoal)
@@ -100,16 +110,24 @@ func (r *Runner) extractionValidatorNode(_ context.Context, state workflowState)
 		SearchQueries:          next.SearchQueries, Uncertainties: next.Session.Uncertainties,
 		Contradictions: next.Session.Contradictions, ConversationSummary: next.Session.ConversationSummary,
 	}, next.Session.ClarificationTurns)
-	if len(validated.Facts) == 0 {
+	if len(validated.Facts) == 0 && len(next.priorFacts) == 0 {
 		return workflowState{}, fmt.Errorf("all %d extracted facts failed evidence validation", rejected)
 	}
-	next.Session.VisitGoal = strings.TrimSpace(validated.VisitGoal)
-	next.Session.Facts = validated.Facts
-	next.Session.SymptomProfiles = validated.SymptomProfiles
-	next.Session.Timeline = validated.Timeline
+	next.Session.Facts = mergeGroundedFacts(next.priorFacts, validated.Facts)
+	next.Session.SymptomProfiles = mergeSymptomProfiles(next.priorProfiles, validated.SymptomProfiles)
+	next.Session.Timeline = mergeTimeline(next.priorTimeline, validated.Timeline)
+	if goal := strings.TrimSpace(validated.VisitGoal); goal != "" {
+		next.Session.VisitGoal = goal
+	} else if next.priorGoal != "" {
+		next.Session.VisitGoal = next.priorGoal
+	}
 	next.Session.RiskSignals = validated.RiskSignals
 	next.Session.MissingFields = validated.MissingFields
 	next.Session.RejectedFactCount += rejected
+	if len(validated.Facts) == 0 {
+		next.Session = r.addEvent(next.Session, "validator", "degraded", "本轮提取未通过原文校验，已保留已确认事实")
+		return next, nil
+	}
 	next.Session = r.addEvent(next.Session, "validator", "completed", "模型提取结果已通过独立边界校验")
 	return next, nil
 }
@@ -470,6 +488,48 @@ func isSafeHealthQuestion(text string) bool {
 	return hasAny(text, "症状", "发作", "不适", "体温", "心率", "血压", "数值", "持续", "频率", "诱发", "缓解", "胸", "呼吸", "晕", "意识", "检查", "药", "过敏", "病史", "疾病", "疼", "痛", "头", "咳", "睡眠", "体重", "饮食", "活动", "情绪", "时间", "变化", "记录", "医生", "就诊", "排便", "月经")
 }
 
+func mergeGroundedFacts(prior, current []domain.Fact) []domain.Fact {
+	return deduplicateFacts(append(append([]domain.Fact(nil), prior...), current...))
+}
+
+func mergeSymptomProfiles(prior, current []domain.SymptomProfile) []domain.SymptomProfile {
+	if len(current) == 0 {
+		return cloneSymptomProfiles(prior)
+	}
+	merged := cloneSymptomProfiles(current)
+	seen := make(map[string]struct{}, len(merged))
+	for _, profile := range merged {
+		seen[normalizeFactEvidence(profile.Name+"|"+profile.SourceQuote)] = struct{}{}
+	}
+	for _, profile := range prior {
+		key := normalizeFactEvidence(profile.Name + "|" + profile.SourceQuote)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, profile)
+	}
+	return merged
+}
+
+func mergeTimeline(prior, current []domain.TimelineEvent) []domain.TimelineEvent {
+	merged := append(append([]domain.TimelineEvent(nil), prior...), current...)
+	result := make([]domain.TimelineEvent, 0, len(merged))
+	seen := make(map[string]struct{}, len(merged))
+	for _, event := range merged {
+		key := normalizeFactEvidence(event.SourceQuote)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, event)
+	}
+	return result
+}
+
 func deduplicateFacts(facts []domain.Fact) []domain.Fact {
 	result := make([]domain.Fact, 0, len(facts))
 	seen := make(map[string]struct{}, len(facts))
@@ -748,5 +808,9 @@ func cloneWorkflowState(source workflowState) workflowState {
 	return workflowState{
 		Session:       cloneSession(source.Session),
 		SearchQueries: append([]string(nil), source.SearchQueries...),
+		priorFacts:    append([]domain.Fact(nil), source.priorFacts...),
+		priorProfiles: cloneSymptomProfiles(source.priorProfiles),
+		priorTimeline: append([]domain.TimelineEvent(nil), source.priorTimeline...),
+		priorGoal:     source.priorGoal,
 	}
 }

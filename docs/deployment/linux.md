@@ -24,6 +24,8 @@ sudo env INSTALL_DOCKER=true \
 
 首次 live 部署会隐藏询问 `LLM_API_KEY`，并询问模型端点和模型名；MySQL 与加密密钥自动生成。文件保存在 `/opt/visit-ready`，浏览器入口由反向代理转发到 `127.0.0.1:8097`。
 
+首次 live **不会**备份 MySQL。只有目录里已有 `.deployment-success` 时，脚本才会等待数据库健康，并用 TCP 连接 `127.0.0.1` 做升级前 dump。不要用镜像构建提交去下载安装脚本。
+
 ## 离线 Demo 主机
 
 ```bash
@@ -54,7 +56,7 @@ sudo env EXPECTED_SOURCE_COMMIT='1.1.0对应的40位提交SHA' \
   ./bootstrap-server.sh 1.1.0
 ```
 
-脚本会锁定部署目录，拉取镜像，更新前启动旧 MySQL 并创建带 SHA-256 校验的逻辑备份，再重建应用。新版本 45 秒内未就绪时会尝试恢复上一应用版本；若旧本地标签已被清理，则按上次成功部署保存的 digest 拉取并核对源码提交。
+脚本会锁定部署目录，拉取镜像，更新前启动旧 MySQL 并创建带 SHA-256 校验的逻辑备份，再重建应用。新版本 45 秒内未就绪时会尝试恢复上一应用版本；若旧本地标签已被清理，则按上次成功部署保存的 digest 拉取并核对源码提交。备份命令是 `mysqldump --protocol=TCP -h 127.0.0.1`，并先执行 `docker compose up -d --wait db`。
 
 手动回退需要提供旧版本的版本号、提交和 digest：
 

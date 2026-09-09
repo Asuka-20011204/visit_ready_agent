@@ -258,7 +258,7 @@ rollback_dir="$INSTALL_DIR/.rollback"
 mkdir -p "$rollback_dir"
 chmod 700 "$rollback_dir"
 has_previous=false
-if [[ -n "$previous_version" && -f compose.yaml ]]; then
+if [[ -n "$previous_version" && -f compose.yaml && -f "$INSTALL_DIR/.deployment-success" ]]; then
   has_previous=true
   install -m 0644 compose.yaml "$rollback_dir/compose.yaml"
   [[ ! -f compose.mysql.yaml ]] || install -m 0644 compose.mysql.yaml "$rollback_dir/compose.mysql.yaml"
@@ -280,7 +280,7 @@ if [[ "$MODE" == live && "$has_previous" == true && -f compose.mysql.yaml ]]; th
   backup_file="$INSTALL_DIR/backups/visitready-before-${VERSION}-$(date -u +%Y%m%dT%H%M%SZ).sql"
   container_backup=/tmp/visitready-pre-update.sql
   if ! docker compose "${compose_files[@]}" exec -T db sh -c \
-    'MYSQL_PWD="$MYSQL_PASSWORD" mysqldump --single-transaction --skip-lock-tables -uvisitready visitready > /tmp/visitready-pre-update.sql' || \
+    'MYSQL_PWD="$MYSQL_PASSWORD" mysqldump --protocol=TCP -h 127.0.0.1 --single-transaction --skip-lock-tables -uvisitready visitready > /tmp/visitready-pre-update.sql' || \
     ! docker compose "${compose_files[@]}" cp "db:$container_backup" "$backup_file"; then
     rm -f "$backup_file" "$backup_file.sha256"
     echo 'Database backup failed; deployment was not changed.' >&2

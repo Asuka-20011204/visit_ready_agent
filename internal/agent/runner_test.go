@@ -331,6 +331,94 @@ func TestRunnerLimitsPrioritizedClarificationToTwoRounds(t *testing.T) {
 	}
 }
 
+func TestRunnerKeepsPriorFactsWhenClarificationExtractionIsUngrounded(t *testing.T) {
+	fact := domain.Fact{Category: "symptom", Content: "左手腕偶尔会酸胀", SourceQuote: "左手腕偶尔会酸胀"}
+	model := &fakeLLM{
+		extractions: []domain.Extraction{
+			{VisitGoal: "整理手腕酸胀", Facts: []domain.Fact{fact}, ClarificationPrompts: []domain.Question{{Text: "麻木通常持续多久？", Reason: "补充病程", Priority: domain.PriorityHigh, Category: "duration"}}},
+			{VisitGoal: "整理手腕酸胀", Facts: []domain.Fact{{Category: "symptom", Content: "腕管综合征", SourceQuote: "模型编造的诊断"}}},
+		},
+		questions: domain.QuestionSet{Questions: []domain.Question{{Text: "我还需要向医生说明哪些手腕变化？"}}},
+	}
+	runner := newRunner(t, model, &fakeSearch{})
+	session, err := runner.Start(context.Background(), "这三周左手腕偶尔会酸胀，用鼠标超过半小时就会发酸。", false)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	session, err = runner.Resume(context.Background(), session, "麻木不是每次用鼠标都会出现，大概持续 10 到 20 分钟。")
+	if err != nil {
+		t.Fatalf("Resume() error = %v", err)
+	}
+	if session.Status == domain.StatusFailed {
+		t.Fatalf("ungrounded second extraction failed the session: %#v", session.Failure)
+	}
+	if len(session.Facts) != 1 || session.Facts[0].SourceQuote != fact.SourceQuote {
+		t.Fatalf("prior grounded facts were not retained: %#v", session.Facts)
+	}
+	if session.Status != domain.StatusWaitingReview {
+		t.Fatalf("ungrounded second extraction status = %q, want waiting_review", session.Status)
+	}
+}
+
+func TestRunnerMergesGroundedClarificationFactsWithPriorFacts(t *testing.T) {
+	fact := domain.Fact{Category: "symptom", Content: "左手腕偶尔会酸胀", SourceQuote: "左手腕偶尔会酸胀"}
+	added := domain.Fact{Category: "duration", Content: "大概持续 10 到 20 分钟", SourceQuote: "大概持续 10 到 20 分钟"}
+	model := &fakeLLM{
+		extractions: []domain.Extraction{
+			{VisitGoal: "整理手腕酸胀", Facts: []domain.Fact{fact}, ClarificationPrompts: []domain.Question{{Text: "麻木通常持续多久？", Reason: "补充病程", Priority: domain.PriorityHigh, Category: "duration"}}},
+			{VisitGoal: "整理手腕酸胀", Facts: []domain.Fact{added}},
+		},
+		questions: domain.QuestionSet{Questions: []domain.Question{{Text: "我还需要向医生说明哪些手腕变化？"}}},
+	}
+	runner := newRunner(t, model, &fakeSearch{})
+	session, err := runner.Start(context.Background(), "这三周左手腕偶尔会酸胀，用鼠标超过半小时就会发酸。", false)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	session, err = runner.Resume(context.Background(), session, "麻木不是每次用鼠标都会出现，大概持续 10 到 20 分钟。")
+	if err != nil {
+		t.Fatalf("Resume() error = %v", err)
+	}
+	if session.Status == domain.StatusFailed {
+		t.Fatalf("merged clarification extraction failed the session: %#v", session.Failure)
+	}
+	if len(session.Facts) != 2 {
+		t.Fatalf("merged facts = %#v", session.Facts)
+	}
+	quotes := session.Facts[0].SourceQuote + " " + session.Facts[1].SourceQuote
+	if !strings.Contains(quotes, fact.SourceQuote) || !strings.Contains(quotes, added.SourceQuote) {
+		t.Fatalf("merged facts lost prior or new evidence: %#v", session.Facts)
+	}
+}
+
+func TestRunnerKeepsPriorFactsWhenClarificationExtractionErrors(t *testing.T) {
+	fact := domain.Fact{Category: "symptom", Content: "左手腕偶尔会酸胀", SourceQuote: "左手腕偶尔会酸胀"}
+	model := &fakeLLM{
+		extractions: []domain.Extraction{
+			{VisitGoal: "整理手腕酸胀", Facts: []domain.Fact{fact}, ClarificationQuestions: []string{"麻木通常持续多久？"}},
+		},
+		questions: domain.QuestionSet{Questions: []domain.Question{{Text: "我还需要向医生说明哪些手腕变化？"}}},
+	}
+	runner := newRunner(t, model, &fakeSearch{})
+	session, err := runner.Start(context.Background(), "这三周左手腕偶尔会酸胀，用鼠标超过半小时就会发酸。", false)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	session, err = runner.Resume(context.Background(), session, "麻木不是每次用鼠标都会出现，大概持续 10 到 20 分钟。")
+	if err != nil {
+		t.Fatalf("Resume() error = %v", err)
+	}
+	if session.Status == domain.StatusFailed {
+		t.Fatalf("extract error during clarification failed the session: %#v", session.Failure)
+	}
+	if len(session.Facts) != 1 || session.Facts[0].SourceQuote != fact.SourceQuote {
+		t.Fatalf("prior grounded facts were not retained: %#v", session.Facts)
+	}
+	if session.Status != domain.StatusWaitingReview {
+		t.Fatalf("extract error during clarification status = %q, want waiting_review", session.Status)
+	}
+}
+
 func TestRunnerLetsUserSkipRemainingClarification(t *testing.T) {
 	fact := domain.Fact{Category: "symptom", Content: "头痛反复出现", SourceQuote: "头痛反复出现"}
 	model := &fakeLLM{
