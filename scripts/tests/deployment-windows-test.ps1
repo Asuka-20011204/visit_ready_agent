@@ -83,6 +83,35 @@ function Get-TestEnvValue([string]$Name, [string]$Path) {
     return $line.Substring($Name.Length + 1)
 }
 
+function Assert-PrivateAcl([string]$Path) {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
+    $acl = Get-Acl -LiteralPath $Path
+    if (-not $acl.AreAccessRulesProtected) { throw "$Path inherits broad filesystem permissions." }
+    $expectedSids = @(
+        'S-1-5-18',
+        'S-1-5-32-544',
+        [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    ) | Sort-Object -Unique
+    $actualSids = @()
+    foreach ($rule in @($acl.Access)) {
+        if ($rule.IsInherited) { throw "$Path contains an inherited access rule." }
+        if ($rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow) {
+            throw "$Path contains a non-Allow access rule."
+        }
+        if (($rule.FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -ne [Security.AccessControl.FileSystemRights]::FullControl) {
+            throw "$Path contains an access rule without FullControl."
+        }
+        $sid = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+        if ($expectedSids -notcontains $sid) { throw "$Path grants access to unexpected principal $sid." }
+        $actualSids += $sid
+    }
+    $actualSids = @($actualSids | Sort-Object -Unique)
+    if ($actualSids.Count -ne $expectedSids.Count) { throw "$Path does not grant the expected private principal set." }
+    foreach ($sid in $expectedSids) {
+        if ($actualSids -notcontains $sid) { throw "$Path is missing required principal $sid." }
+    }
+}
+
 try {
     New-Item -ItemType Directory -Path $testRoot | Out-Null
     $installDir = Join-Path $testRoot 'install'
@@ -93,6 +122,8 @@ try {
     if ((Get-TestEnvValue APP_VERSION $envFile) -ne '1.0.1') { throw 'Initial version was not persisted.' }
     if ((Get-Content (Join-Path $installDir '.image-digest')) -notmatch '^example@sha256:') { throw 'Image digest metadata was not persisted.' }
     if ((Get-Content (Join-Path $installDir '.source-commit')) -ne $sourceCommit) { throw 'Source commit metadata was not persisted.' }
+    Assert-PrivateAcl $installDir
+    Assert-PrivateAcl $envFile
 
     & (Join-Path $repoRoot 'scripts/bootstrap-windows.ps1') `
         -Version 1.0.3 -InstallDir $installDir -ReadyTimeoutSeconds 1
@@ -100,6 +131,7 @@ try {
     if ((Get-Content (Join-Path $installDir '.rollback\version')) -ne '1.0.1') { throw 'Rollback version metadata was not preserved.' }
     if (-not (Test-Path (Join-Path $installDir '.rollback\image-digest'))) { throw 'Rollback digest metadata was not preserved.' }
     if (-not (Test-Path (Join-Path $installDir '.rollback\source-commit'))) { throw 'Rollback source metadata was not preserved.' }
+    Assert-PrivateAcl (Join-Path $installDir '.rollback')
 
     try {
         & (Join-Path $repoRoot 'scripts/bootstrap-windows.ps1') `
@@ -128,10 +160,12 @@ try {
     if (-not $backup -or $backup.Length -lt 64 -or -not (Test-Path "$($backup.FullName).sha256")) {
         throw 'Windows live update did not create a verified database backup.'
     }
-    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
-        if (-not (Get-Acl $backup.FullName).AreAccessRulesProtected) { throw 'SQL backup inherits broad filesystem permissions.' }
-        if (-not (Get-Acl "$($backup.FullName).sha256").AreAccessRulesProtected) { throw 'Backup checksum inherits broad filesystem permissions.' }
-    }
+    Assert-PrivateAcl $liveDir
+    Assert-PrivateAcl (Join-Path $liveDir '.env')
+    Assert-PrivateAcl (Join-Path $liveDir '.rollback')
+    Assert-PrivateAcl (Join-Path $liveDir 'backups')
+    Assert-PrivateAcl $backup.FullName
+    Assert-PrivateAcl "$($backup.FullName).sha256"
 
     $standaloneEnv = Join-Path $testRoot 'standalone.env'
     [IO.File]::WriteAllText($standaloneEnv, "APP_MODE=demo`n")

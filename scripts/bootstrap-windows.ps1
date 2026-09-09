@@ -27,7 +27,13 @@ $markerFile = Join-Path $InstallDir '.deployment-success'
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Invoke-Docker([string[]]$Arguments) {
-    $output = & docker @Arguments
+    $dockerArguments = $Arguments
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        $dockerArguments = @($Arguments | ForEach-Object {
+            if ($_.StartsWith('{{') -and $_.Contains('"')) { $_.Replace('"', '\"') } else { $_ }
+        })
+    }
+    $output = & docker @dockerArguments
     if ($LASTEXITCODE -ne 0) {
         throw "docker $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
     }
