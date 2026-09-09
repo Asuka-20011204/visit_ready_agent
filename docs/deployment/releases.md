@@ -32,6 +32,15 @@ ghcr.io/asuka-20011204/visit-ready-agent:1.0.2
 
 发布工作流会生成 SBOM/provenance，并在 Job Summary 输出镜像 digest。记录该 digest 和 40 位提交 SHA；生产部署把它们传给一键脚本，脚本会校验镜像 OCI revision 并从同一提交下载 Compose。
 
+具体获取路径：打开 GitHub 仓库的 `Actions` -> `release-image` -> 对应成功版本 -> `Summary`。`publish` Job 对应 GHCR，`publish-dockerhub` Job 对应 Docker Hub。复制所选 Job 的 `Source commit` 与 `Published digest`；不要把一个仓库的 digest 用于另一个仓库。
+
+当前 `v1.0.2` 的记录如下：
+
+| 镜像仓库 | SourceCommit | ImageDigest |
+| --- | --- | --- |
+| Docker Hub（脚本默认） | `e03a9f67e2a17c32ab63501af033e7bb2ba8dd18` | `sha256:223fb854a7e644a0d25ac57a2392643e7e6fdf1ca6043277845f56220261229a` |
+| GHCR | `e03a9f67e2a17c32ab63501af033e7bb2ba8dd18` | `sha256:91be2428135acdf6a6fd056ab2215386e4f96a8095896aad106f7389429cd0f0` |
+
 ## 本机手动发布 Docker Hub
 
 ```powershell
