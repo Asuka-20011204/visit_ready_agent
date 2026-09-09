@@ -266,7 +266,11 @@ fi
 compose_files=(-f compose.yaml)
 [[ "$MODE" != live ]] || compose_files+=(-f compose.mysql.yaml)
 if [[ "$MODE" == live && "$has_previous" == true && -f compose.mysql.yaml ]]; then
-  docker compose "${compose_files[@]}" up -d db
+  db_wait_timeout="$READY_TIMEOUT_SECONDS"
+  if (( db_wait_timeout < 120 )); then
+    db_wait_timeout=120
+  fi
+  docker compose "${compose_files[@]}" up -d --wait --wait-timeout "$db_wait_timeout" db
   mkdir -p "$INSTALL_DIR/backups"
   chmod 700 "$INSTALL_DIR/backups"
   backup_file="$INSTALL_DIR/backups/visitready-before-${VERSION}-$(date -u +%Y%m%dT%H%M%SZ).sql"

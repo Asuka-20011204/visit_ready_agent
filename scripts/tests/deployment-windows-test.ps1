@@ -5,6 +5,7 @@ $sourceCommit = '0123456789abcdef0123456789abcdef01234567'
 $global:MockCurrentVersion = ''
 $global:MockContainers = @{}
 $global:MockFailFinalPS = $false
+$global:MockDbReady = $false
 
 $scriptText = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'scripts/bootstrap-windows.ps1')
 if ($scriptText -match '\[IO\.FileSystemAclExtensions\]') {
@@ -12,6 +13,9 @@ if ($scriptText -match '\[IO\.FileSystemAclExtensions\]') {
 }
 if ($scriptText -notmatch 'System\.IO\.File\]::SetAccessControl' -or $scriptText -notmatch 'System\.IO\.Directory\]::SetAccessControl') {
     throw 'Bootstrap script is missing the Windows PowerShell 5.1 ACL fallback.'
+}
+if ($scriptText -notmatch '--wait' -or $scriptText -notmatch '--wait-timeout') {
+    throw 'Bootstrap script dumps MySQL before waiting for database health.'
 }
 
 function global:docker {
@@ -52,6 +56,14 @@ function global:docker {
     }
     if ($arguments[0] -eq 'compose' -and $arguments -contains 'up') {
         $global:MockCurrentVersion = $env:APP_VERSION
+        if ($arguments -contains '--wait') { $global:MockDbReady = $true }
+        return
+    }
+    if (($arguments -join ' ') -match 'mysqldump') {
+        if (-not $global:MockDbReady) {
+            $global:LASTEXITCODE = 2
+            return
+        }
         return
     }
     if ($arguments[0] -eq 'compose' -and $arguments -contains 'cp') {

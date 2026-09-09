@@ -8,6 +8,7 @@ MOCK_BIN="$TEST_ROOT/bin"
 INSTALL_DIR="$TEST_ROOT/install"
 STATE_FILE="$TEST_ROOT/current-version"
 CALL_LOG="$TEST_ROOT/calls.log"
+DB_READY_FILE="$TEST_ROOT/db-ready"
 mkdir -p "$MOCK_BIN"
 
 cat > "$MOCK_BIN/docker" <<'EOF'
@@ -27,6 +28,15 @@ case "${1:-} ${2:-}" in
 esac
 if [[ " $* " == *" up "* ]]; then
   printf '%s\n' "${APP_VERSION:-}" > "$MOCK_STATE_FILE"
+  if [[ " $* " == *" --wait "* ]]; then
+    printf 'ready\n' > "$MOCK_DB_READY_FILE"
+  fi
+fi
+if [[ " $* " == *"mysqldump"* ]]; then
+  if [[ ! -s "$MOCK_DB_READY_FILE" ]]; then
+    echo 'mysqldump ran before database health wait' >&2
+    exit 2
+  fi
 fi
 if [[ " $* " == *" cp "* ]]; then
   destination="${!#}"
@@ -70,6 +80,7 @@ chmod +x "$MOCK_BIN/flock"
 export PATH="$MOCK_BIN:$PATH"
 export MOCK_CALL_LOG="$CALL_LOG"
 export MOCK_STATE_FILE="$STATE_FILE"
+export MOCK_DB_READY_FILE="$DB_READY_FILE"
 export MOCK_SOURCE_ROOT="$ROOT"
 export INSTALL_DIR
 export APP_MODE=demo

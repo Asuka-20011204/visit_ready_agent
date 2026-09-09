@@ -271,7 +271,8 @@ try {
         $oldCompose = @('compose', '-f', (Join-Path $InstallDir 'compose.yaml'))
         if ($Mode -eq 'live') { $oldCompose += @('-f', (Join-Path $InstallDir 'compose.mysql.yaml')) }
         if ($Mode -eq 'live' -and $hasPrevious) {
-            Invoke-Docker ($oldCompose + @('up', '-d', 'db')) | Out-Null
+            $dbWaitTimeout = [Math]::Max($ReadyTimeoutSeconds, 120)
+            Invoke-Docker ($oldCompose + @('up', '-d', '--wait', '--wait-timeout', "$dbWaitTimeout", 'db')) | Out-Null
             $backupDir = Join-Path $InstallDir 'backups'
             New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
             Protect-PrivateDirectory $backupDir
