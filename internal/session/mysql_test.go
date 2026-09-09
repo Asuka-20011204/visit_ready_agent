@@ -84,7 +84,7 @@ func TestMySQLStoreReplaceIfStatusUsesRevisionCAS(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	store := newTestMySQLStore(t, db, 8)
-	now := time.Date(2026, 9, 8, 8, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	stale := domain.Session{
 		ID:        "revision-cas",
 		Status:    domain.StatusFailed,

@@ -15,7 +15,7 @@ func TestLoadDefaultsToDemoWithSafeTimeouts(t *testing.T) {
 	if cfg.Mode != ModeDemo {
 		t.Fatalf("Mode = %q, want %q", cfg.Mode, ModeDemo)
 	}
-	if cfg.Addr != "127.0.0.1:8080" {
+	if cfg.Addr != "127.0.0.1:8097" {
 		t.Fatalf("Addr = %q, want loopback default", cfg.Addr)
 	}
 	if cfg.SessionStore != SessionStoreMemory || cfg.MySQLDSN != "" {

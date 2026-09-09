@@ -60,7 +60,7 @@ func Load(lookup LookupEnv) (Config, error) {
 
 	cfg := Config{
 		Mode:              valueOrDefault(lookup, "APP_MODE", ModeDemo),
-		Addr:              valueOrDefault(lookup, "APP_ADDR", "127.0.0.1:8080"),
+		Addr:              valueOrDefault(lookup, "APP_ADDR", "127.0.0.1:8097"),
 		LLMEndpoint:       value(lookup, "LLM_ENDPOINT"),
 		LLMAPIKey:         value(lookup, "LLM_API_KEY"),
 		LLMModel:          value(lookup, "LLM_MODEL"),

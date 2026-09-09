@@ -29,6 +29,29 @@ jobs:
       - name: Verify modules
         run: go mod verify
 
+      - name: Verify deployment scripts
+        shell: bash
+        run: |
+          shellcheck scripts/*.sh scripts/tests/*.sh
+          bash -n scripts/*.sh scripts/tests/*.sh
+          bash scripts/tests/bootstrap-server-test.sh
+
+      - name: Parse PowerShell deployment scripts
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem scripts/*.ps1 | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count) {
+              $failed = $true
+              $errors | ForEach-Object { Write-Error $_.Message }
+            }
+          }
+          if ($failed) { exit 1 }
+          ./scripts/tests/deployment-windows-test.ps1
+
       - name: Vet
         run: go vet ./...
 

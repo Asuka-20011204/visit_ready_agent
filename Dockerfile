@@ -23,6 +23,12 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM alpine:3.22 AS runtime
 
+ARG VERSION=dev
+ARG COMMIT=unknown
+LABEL org.opencontainers.image.source="https://github.com/Asuka-20011204/visit_ready_agent" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}"
+
 RUN apk add --no-cache ca-certificates tzdata \
     && addgroup -S -g 10001 app \
     && adduser -S -D -H -u 10001 -G app app
