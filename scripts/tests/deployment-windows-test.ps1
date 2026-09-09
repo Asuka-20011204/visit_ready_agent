@@ -182,6 +182,7 @@ try {
     if ($global:MockContainers.ContainsKey('visit-ready-agent-rollback')) { throw 'Rollback container was not cleaned up.' }
     if ($global:MockCurrentVersion -ne '1.0.3') { throw 'Diagnostic failure incorrectly rolled back the healthy container.' }
 
+    $global:LASTEXITCODE = 0
     Write-Output 'PowerShell deployment behavior OK'
 } finally {
     Remove-Item Function:\docker -ErrorAction SilentlyContinue

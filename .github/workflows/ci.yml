@@ -51,6 +51,8 @@ jobs:
           }
           if ($failed) { exit 1 }
           ./scripts/tests/deployment-windows-test.ps1
+          if (-not $?) { exit 1 }
+          exit 0
 
       - name: Vet
         run: go vet ./...
