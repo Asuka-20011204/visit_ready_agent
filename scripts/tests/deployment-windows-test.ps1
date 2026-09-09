@@ -6,6 +6,14 @@ $global:MockCurrentVersion = ''
 $global:MockContainers = @{}
 $global:MockFailFinalPS = $false
 
+$scriptText = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'scripts/bootstrap-windows.ps1')
+if ($scriptText -match '\[IO\.FileSystemAclExtensions\]') {
+    throw 'Bootstrap script directly references a type unavailable in Windows PowerShell 5.1.'
+}
+if ($scriptText -notmatch 'System\.IO\.File\]::SetAccessControl' -or $scriptText -notmatch 'System\.IO\.Directory\]::SetAccessControl') {
+    throw 'Bootstrap script is missing the Windows PowerShell 5.1 ACL fallback.'
+}
+
 function global:docker {
     $arguments = @($args | ForEach-Object { [string]$_ })
     $global:LASTEXITCODE = 0
