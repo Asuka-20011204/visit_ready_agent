@@ -18,7 +18,7 @@ spec:
         app.kubernetes.io/name: visit-ready-agent
     spec:
       automountServiceAccountToken: false
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 130
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -43,12 +43,22 @@ spec:
                 secretKeyRef:
                   name: visit-ready-secrets
                   key: LLM_API_KEY
-            - name: TAVILY_API_KEY
+            - name: BOCHA_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: visit-ready-secrets
-                  key: TAVILY_API_KEY
+                  key: BOCHA_API_KEY
                   optional: true
+            - name: MYSQL_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: visit-ready-secrets
+                  key: MYSQL_DSN
+            - name: SESSION_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: visit-ready-secrets
+                  key: SESSION_ENCRYPTION_KEY
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -64,20 +74,20 @@ spec:
               memory: 512Mi
           startupProbe:
             httpGet:
-              path: /healthz
+              path: /livez
               port: http
             periodSeconds: 2
             failureThreshold: 15
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /livez
               port: http
             periodSeconds: 15
             timeoutSeconds: 2

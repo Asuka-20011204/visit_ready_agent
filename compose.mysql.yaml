@@ -1,0 +1,30 @@
+services:
+  app:
+    environment:
+      SESSION_STORE: mysql
+      MYSQL_DSN: "visitready:${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}@tcp(db:3306)/visitready?parseTime=true&charset=utf8mb4&loc=UTC"
+      SESSION_ENCRYPTION_KEY: ${SESSION_ENCRYPTION_KEY:?set SESSION_ENCRYPTION_KEY in .env}
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: visitready
+      MYSQL_USER: visitready
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    volumes:
+      - visitready_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uvisitready -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  visitready_mysql:

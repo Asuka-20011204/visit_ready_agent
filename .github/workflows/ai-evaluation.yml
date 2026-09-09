@@ -1,0 +1,31 @@
+name: ai-evaluation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deepseek-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run versioned medical evaluation gate
+        env:
+          EVAL_LLM_ENDPOINT: ${{ secrets.EVAL_LLM_ENDPOINT }}
+          EVAL_LLM_API_KEY: ${{ secrets.EVAL_LLM_API_KEY }}
+          EVAL_LLM_MODEL: ${{ vars.EVAL_LLM_MODEL }}
+        run: go run ./cmd/eval > evaluation-report.json
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: medical-evaluation-${{ github.sha }}
+          path: evaluation-report.json
+          if-no-files-found: warn

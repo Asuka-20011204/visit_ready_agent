@@ -3,142 +3,178 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="将脱敏后的健康描述整理成可核对、可导出的诊前沟通清单。">
+  <meta name="description" content="通过受约束的 Agent 对话，将脱敏健康描述整理成可核对、可导出的诊前沟通清单。">
+  <meta name="theme-color" content="#f3f8f5">
   <title>诊前序 · VisitReady Agent</title>
   <link rel="icon" href="/assets/shield-check.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/styles.css?v=20260903">
-  <script src="/assets/app.js?v=20260903b" defer></script>
+  <link rel="stylesheet" href="/assets/styles.css?v=20260908e">
+  <script src="/assets/review.js?v=20260905b" defer></script>
+  <script src="/assets/session-state.js?v=20260908f" defer></script>
+  <script src="/assets/network.js?v=20260908g" defer></script>
+  <script src="/assets/app.js?v=20260908g" defer></script>
 </head>
 <body data-mode="{{.Mode}}">
-  <header class="topbar">
-    <a class="brand" href="/" aria-label="诊前序首页">
-      <span class="brand-mark"><img src="/assets/shield-check.svg" alt=""></span>
-      <span><strong>诊前序</strong><small>VISITREADY AGENT</small></span>
-    </a>
-    <div class="topbar-status">
-      {{if .Demo}}<span class="mode mode-demo"><span></span>离线演示 · 未调用 AI</span>{{else}}<span class="mode mode-live"><span></span>实时 AI</span>{{end}}
-      <span class="privacy-note">会话 30 分钟后自动清除</span>
-    </div>
-  </header>
-
-  {{if .Demo}}
-  <div class="demo-banner" role="status">
-    当前是断网兜底模式，仅演示完整流程，结果由本地规则生成。正式答辩请使用 <code>APP_MODE=live</code> 展示真实模型调用。
-  </div>
-  {{end}}
-
-  <main class="shell">
-    <section class="intro" aria-labelledby="page-title">
-      <p class="eyebrow">就诊沟通准备工具</p>
-      <h1 id="page-title">把零散描述，整理成一页能带走的就诊清单。</h1>
-      <p>只整理你明确提供的事实，不做诊断、不推荐用药。联网资料与个人事实始终分开。</p>
-      <div class="safety-strip">
-        <strong>紧急情况</strong>
-        <span>如出现严重呼吸困难、意识异常等情况，请立即联系当地急救服务。</span>
+  <a class="skip-link" href="#conversation">跳到对话</a>
+  <div class="app-shell" data-testid="visit-ready-workspace">
+    <aside class="history-rail" aria-label="往期会话">
+      <div class="brand-row">
+        <a class="brand" href="/" aria-label="诊前序首页"><span class="brand-mark"><img src="/assets/shield-check.svg" alt=""></span><span><strong>诊前序</strong><small>VISITREADY</small></span></a>
+        <button class="rail-toggle" id="rail-toggle" type="button" aria-label="收起往期会话" aria-expanded="true">‹</button>
       </div>
-    </section>
+      <button class="new-thread-button" id="new-conversation-button" type="button" aria-label="新建诊前准备" title="新建诊前准备"><span aria-hidden="true">＋</span><span>新建诊前准备</span></button>
+      <nav class="history-nav" aria-label="往期会话列表" data-testid="session-history">
+        <div class="history-heading"><span>最近会话</span><small>本浏览器 · 服务内 {{.Retention}}</small></div>
+        <ol class="history-list" id="history-list"></ol>
+        <div class="history-empty" id="history-empty"><span class="history-empty-mark" aria-hidden="true"></span><p>完成一次整理后，会话会暂存在这里。</p></div>
+      </nav>
+        <div class="history-toast" id="history-toast" role="status" hidden><span id="history-toast-message">已仅从本浏览器隐藏</span><button id="undo-history-button" type="button">撤销</button></div>
+      <div class="rail-footnote"><img src="/assets/shield-check.svg" alt=""><p><strong>{{.Retention}}临时会话</strong><span>内容按期限自动清除。</span>{{if .Demo}}<button id="device-access-button" type="button">跨设备恢复</button>{{else}}<span>登录账户后可恢复本账户的往期会话。</span>{{end}}</p></div>
+    </aside>
 
-    <div class="workspace">
-      <section class="input-pane" aria-labelledby="input-title">
-        <div class="section-heading">
-          <div><span class="step-number">01</span><h2 id="input-title">描述本次情况</h2></div>
-          <button class="text-button" id="sample-button" type="button">填入演示样例</button>
-        </div>
-        <label for="health-input">已脱敏的健康描述</label>
-        <textarea id="health-input" maxlength="6000" rows="12" placeholder="例如：三天前开始咳嗽，晚上更明显。昨晚测量体温 37.2℃。目前没有服药……"></textarea>
-        <div class="field-meta"><span>请勿填写姓名、电话、身份证号或详细地址</span><span id="char-count">0 / 6000</span></div>
+    <main class="conversation-shell" id="main-content">
+      <div class="sr-only" id="live-announcer" role="status" aria-live="polite"></div>
+      <header class="conversation-header">
+        <div><p class="thread-kicker">诊前沟通 Agent</p><h1 id="thread-title">新的诊前准备</h1></div>
+        <div class="header-status"><button class="account-button" id="account-button" type="button" hidden><span id="account-email"></span></button><button class="delete-session-button" id="delete-session-button" type="button" hidden>删除会话</button><span class="expiry-chip" id="session-expiry" hidden></span>{{if .Demo}}<span class="mode mode-demo"><i></i><span>离线演示 · 未调用 AI<small>结果由本地规则生成</small></span></span>{{else}}<span class="mode mode-live"><i></i>实时 AI</span>{{end}}</div>
+      </header>
 
-        <div class="setting-row">
-          <div>
-            <strong>检索可信公开资料</strong>
-            <small>仅发送通用医学术语，限定政府与公共卫生域名</small>
-          </div>
-          <label class="switch" aria-label="允许联网搜索">
-            <input id="search-toggle" type="checkbox" checked>
-            <span></span>
-          </label>
-        </div>
-
-        <label class="consent">
-          <input id="privacy-check" type="checkbox">
-          <span>我已检查并移除可直接识别个人身份的信息</span>
-        </label>
-
-        <button class="primary-button" id="start-button" type="button">
-          <img src="/assets/sparkles.svg" alt="">
-          <span>开始整理</span>
-        </button>
-        <p class="error-message" id="error-message" role="alert" hidden></p>
-      </section>
-
-      <section class="result-pane" aria-labelledby="result-title">
-        <div class="section-heading">
-          <div><span class="step-number">02</span><h2 id="result-title">核对与导出</h2></div>
-          <button class="icon-button" id="reset-button" type="button" title="重新开始" aria-label="重新开始" hidden>↺</button>
-        </div>
-
-        <div class="empty-state" id="empty-state">
-          <img src="/assets/clipboard-check.svg" alt="">
-          <h3>清单将在这里生成</h3>
-          <p>Agent 会依次提取事实、校验原文依据、按需追问，再生成沟通问题。</p>
-        </div>
-
-        <div id="working-state" class="working-state" hidden aria-live="polite">
-          <div class="spinner" aria-hidden="true"></div>
-          <div><strong>Agent 正在整理</strong><p>正在执行受约束的工作流，请稍候。</p></div>
-        </div>
-
-        <div id="session-view" hidden>
-          <ol class="agent-events" id="agent-events" aria-label="Agent 执行记录"></ol>
-
-          <section id="clarification-panel" class="clarification-panel" hidden>
-            <p class="section-label">需要补充一轮信息</p>
-            <div id="clarification-questions"></div>
-            <label for="clarification-input">你的补充</label>
-            <textarea id="clarification-input" maxlength="2000" rows="4" placeholder="只填写与问题相关的信息，仍请保持脱敏。"></textarea>
-            <button class="primary-button" id="clarify-button" type="button">提交补充并继续</button>
+      <section class="thread-viewport" id="conversation" aria-labelledby="thread-title">
+        <div class="conversation-thread" id="conversation-thread" role="log" aria-live="polite" aria-relevant="additions text" data-testid="conversation-thread">
+          <section class="welcome-view" id="empty-state">
+            <div class="welcome-intro">
+              <div class="welcome-symbol" aria-hidden="true"><span></span><span></span><span></span></div>
+              <p class="eyebrow">一次安静、可核对的整理</p>
+              <h2>这次就诊，最想让医生了解什么？</h2>
+              <p class="welcome-copy">描述症状、持续时间、已经做过的检查和正在使用的药物。Agent 会建立一份持续更新的访谈状态，只追问当前最有价值的信息。</p>
+              <aside class="emergency-note"><strong>紧急情况</strong><span>如出现严重呼吸困难、意识异常等情况，请立即联系当地急救服务。</span></aside>
+            </div>
+            <div class="prompt-paths">
+              <p class="prompt-paths-label">可以从这里开始</p>
+              <div class="suggestion-grid" aria-label="输入建议">
+                <button type="button" class="suggestion" data-prompt="主要症状与开始时间："><span>01</span><strong>从症状开始</strong><small>发生了什么，何时开始</small></button>
+                <button type="button" class="suggestion" data-prompt="症状的变化与影响："><span>02</span><strong>补充变化</strong><small>什么情况下更明显</small></button>
+                <button type="button" class="suggestion" data-prompt="检查、用药与过敏情况："><span>03</span><strong>列出现有资料</strong><small>检查、药物与过敏</small></button>
+              </div>
+            </div>
           </section>
 
-          <div id="review-panel" hidden>
-            <div class="review-head">
-              <div><p class="section-label">人工核对</p><h3>确认每一项都来自你的描述</h3></div>
-              <span class="review-badge">等待确认</span>
-            </div>
+          <article class="turn user-turn" id="initial-user-turn" data-role="user" hidden><div class="turn-avatar" aria-hidden="true">你</div><div class="turn-body"><p class="turn-author">你的描述</p><p id="initial-user-message"></p></div></article>
+          <article class="turn assistant-turn working-turn" id="working-state" data-role="assistant" aria-live="polite" hidden><div class="turn-avatar agent-avatar" aria-hidden="true"><img src="/assets/sparkles.svg" alt=""></div><div class="turn-body"><p class="turn-author">VisitReady Agent</p><div class="thinking-line"><span></span><span></span><span></span><strong id="working-status">请求已发送，等待 AI 生成结果</strong></div><div class="working-meta"><span id="working-elapsed">已等待 0 秒</span><span>完整结果到达后会一次显示</span></div><button class="cancel-run-button" id="cancel-run-button" type="button">停止等待</button></div></article>
 
-            <label for="visit-goal">本次就诊目标</label>
-            <input id="visit-goal" class="goal-input" maxlength="240">
+          <div class="form-error" id="session-error" role="alert" tabindex="-1" hidden></div><div class="form-error" id="recovery-error" role="alert" tabindex="-1" hidden></div>
+          <div class="recovery-notice" id="recovery-notice" role="status" hidden><span aria-hidden="true">↗</span><p><strong>已恢复这个临时会话</strong><small>浏览器只保存匿名会话编号；页面会显示核对所需的原文证据片段。</small></p></div>
+          <div id="expired-state" class="expired-state" tabindex="-1" hidden><span class="state-icon" aria-hidden="true">⌛</span><h2>这次临时会话已清除</h2><p>为保护隐私，服务器不会继续保留这份内容。</p><button class="secondary-button" id="expired-reset-button" type="button">开始新会话</button></div>
 
-            <section class="result-section">
-              <h4>已提取事实 <span id="fact-count"></span></h4>
-              <div id="facts-list" class="facts-list"></div>
-            </section>
+          <div id="session-view" data-testid="session-panel" hidden>
+            <article class="turn assistant-turn" data-role="assistant"><div class="turn-avatar agent-avatar" aria-hidden="true"><img src="/assets/sparkles.svg" alt=""></div><div class="turn-body assistant-response"><p class="turn-author">VisitReady Agent</p><p class="response-lead" id="assistant-lead">我已完成第一轮整理。先看看处理记录，再核对结果。</p><details class="run-record" data-testid="run-record"><summary><span><i class="run-state-dot"></i>处理记录</span><small id="run-summary">等待结果</small></summary><ol class="agent-events" id="agent-events" data-testid="event-timeline"></ol></details></div></article>
 
-            <section class="result-section">
-              <h4>准备向医生询问</h4>
-              <div id="questions-list" class="questions-list"></div>
-            </section>
+            <article class="turn assistant-turn emergency-turn" id="emergency-panel" data-role="assistant" role="alert" tabindex="-1" hidden><div class="turn-avatar emergency-avatar" aria-hidden="true">!</div><div class="turn-body emergency-terminal">
+              <p class="turn-author">VisitReady Agent · 紧急安全处理</p>
+              <p class="emergency-kicker">请停止继续填写</p>
+              <h2>当前信息需要立即由急救或急诊处理</h2>
+              <p id="emergency-message">这些表现正在发生或明显加重，请立即联系当地急救服务或前往急诊。</p>
+              <p class="emergency-boundary">这不是诊断。不要为了继续使用本工具而延迟寻求紧急帮助。</p>
+              <a id="emergency-export-button" class="emergency-export-button" href="#" download="visit-ready-emergency.md"><img src="/assets/download.svg" alt="">下载紧急安全摘要</a>
+            </div></article>
 
-            <section class="result-section" id="sources-section" hidden>
-              <h4>可信参考资料 <span>不属于个人事实</span></h4>
-              <div id="sources-list" class="sources-list"></div>
-            </section>
+            <article class="turn assistant-turn failed-turn" id="failed-panel" data-role="assistant" role="alert" tabindex="-1" hidden><div class="turn-avatar failed-avatar" aria-hidden="true">!</div><div class="turn-body failed-terminal">
+              <p class="turn-author">VisitReady Agent · 可恢复中断</p>
+              <h2>这次处理没有完成</h2>
+              <p id="failed-message">本次内容已保留，可以从中断处重新尝试，无需再次填写。</p>
+              <p class="failed-detail" id="failed-detail"></p>
+              <button class="primary-button" id="retry-run-button" type="button"><span aria-hidden="true">↻</span><span>重新尝试</span></button>
+            </div></article>
 
-            <button class="primary-button confirm-button" id="confirm-button" type="button">
-              <img src="/assets/check.svg" alt="">
-              <span>我已核对，生成最终版</span>
-            </button>
-          </div>
+            <article class="turn assistant-turn clarification-turn" id="clarification-panel" data-role="assistant" hidden><div class="turn-avatar agent-avatar" aria-hidden="true"><img src="/assets/sparkles.svg" alt=""></div><div class="turn-body"><p class="turn-author">VisitReady Agent</p><h2>我已经抓住重点，再确认最有价值的信息</h2><p class="clarification-progress" id="clarification-progress"></p><ol id="clarification-questions" class="clarification-questions"></ol></div></article>
+            <article class="turn user-turn" id="clarification-user-turn" data-role="user" hidden><div class="turn-avatar" aria-hidden="true">你</div><div class="turn-body"><p class="turn-author">你的补充</p><p id="clarification-user-message"></p></div></article>
 
-          <div id="completed-panel" class="completed-panel" hidden>
-            <img src="/assets/check.svg" alt="">
-            <div><strong>最终版已生成</strong><p>文件只包含你核对后的结构化信息。</p></div>
-            <a id="export-button" class="download-button" href="#" download="visit-ready.md"><img src="/assets/download.svg" alt="">下载 Markdown</a>
+            <article class="turn assistant-turn review-turn" id="review-panel" data-role="assistant" hidden><div class="turn-avatar agent-avatar" aria-hidden="true"><img src="/assets/clipboard-check.svg" alt=""></div><div class="turn-body">
+              <div class="artifact-head"><div><p class="turn-author">VisitReady Agent · 诊前摘要</p><h2>请逐项核对后生成最终版</h2></div><span class="review-badge" id="review-badge">等待确认</span></div>
+              <section class="interview-overview" aria-labelledby="conversation-summary-title">
+                <div class="interview-meter"><span id="interview-meter-bar"></span></div>
+                <div class="interview-metrics"><strong id="conversation-summary-title">Agent 对这次沟通的理解</strong><span id="interview-metrics"></span></div>
+                <p id="conversation-summary" class="conversation-summary"></p>
+                <ul id="summary-confirmed" class="summary-confirmed"></ul>
+              </section>
+              <div class="goal-field"><label for="visit-goal">本次就诊目标</label><input id="visit-goal" class="goal-input" maxlength="240" aria-describedby="goal-help"><p id="goal-help">可以修改为你最希望本次就诊解决的问题。</p></div>
+              <section class="intelligence-section risk-section" id="risk-section" aria-labelledby="risk-title" data-testid="risk-signals" hidden>
+                <div class="subsection-heading"><h3 id="risk-title">安全优先项</h3><span>仅依据你明确描述的表现</span></div><div id="risk-signals" class="risk-signals"></div>
+              </section>
+              <div class="intelligence-grid">
+                <section class="intelligence-section" id="symptom-profiles-section" aria-labelledby="symptom-profiles-title" data-testid="symptom-profiles" hidden>
+                  <div class="subsection-heading"><h3 id="symptom-profiles-title">症状画像</h3><span>已知细节</span></div><div id="symptom-profiles" class="symptom-profiles"></div>
+                </section>
+                <section class="intelligence-section" id="clinical-timeline-section" aria-labelledby="clinical-timeline-title" data-testid="clinical-timeline" hidden>
+                  <div class="subsection-heading"><h3 id="clinical-timeline-title">时间线</h3><span>按原文梳理</span></div><ol id="clinical-timeline" class="clinical-timeline"></ol>
+                </section>
+              </div>
+              <section class="intelligence-section missing-section" id="missing-section" aria-labelledby="missing-title" hidden>
+                <div class="subsection-heading"><h3 id="missing-title">还缺哪些关键信息</h3><span>后续追问会优先补全</span></div><ul id="missing-context" class="missing-context"></ul>
+              </section>
+              <section class="uncertainty-section" id="uncertainty-section" aria-labelledby="uncertainty-title" hidden>
+                <div class="subsection-heading"><h3 id="uncertainty-title">仍不确定</h3><span>不会被当成确定事实</span></div><div id="uncertainty-list" class="uncertainty-list"></div>
+              </section>
+              <section class="contradiction-section" id="contradiction-section" aria-labelledby="contradiction-title" hidden>
+                <div class="subsection-heading"><h3 id="contradiction-title">发现不同说法</h3><span>两段原话都会保留</span></div><div id="contradiction-list" class="contradiction-list"></div>
+              </section>
+              <fieldset class="fact-review" id="fact-review" data-testid="fact-review"><legend>已提取事实</legend><div class="review-progress"><span id="fact-count">0 项</span><strong id="review-progress">已核对 0 / 0</strong></div><p class="review-instruction">检查事实与原文依据，确认准确后逐项勾选。</p><div id="facts-list" class="facts-list"></div></fieldset>
+              <section class="artifact-section" id="next-actions-section" aria-labelledby="next-actions-title" data-testid="next-actions" hidden><div class="subsection-heading"><h3 id="next-actions-title">下一步准备</h3><span>就诊前可执行</span></div><ol id="next-actions" class="next-actions"></ol></section>
+              <section class="artifact-section" aria-labelledby="questions-title"><div class="subsection-heading"><h3 id="questions-title">与医生重点沟通</h3><span>已按优先级整理</span></div><ol id="questions-list" class="questions-list"></ol></section>
+              <section class="artifact-section" id="sources-section" aria-labelledby="sources-title" hidden><div class="subsection-heading"><h3 id="sources-title">可信参考资料</h3><span>与个人事实分开</span></div><div id="sources-list" class="sources-list"></div></section>
+              <fieldset class="insight-review" data-testid="insight-review"><legend>结构化分析核对</legend><label for="insights-check"><input id="insights-check" type="checkbox"><span><strong>我已核对症状画像、安全提示和准备建议</strong><small>这些内容与我提供的信息一致；未知项仍需在就诊时补充。</small></span></label></fieldset>
+              <div class="review-actions" id="review-actions"><button class="primary-button" id="confirm-button" type="button" disabled><img src="/assets/check.svg" alt=""><span>完成核对，生成最终版</span></button><button class="text-button" id="find-unreviewed-button" type="button">定位未核对项</button></div>
+            </div></article>
+
+            <article class="turn assistant-turn completed-turn" id="completed-panel" data-role="assistant" tabindex="-1" hidden><div class="turn-avatar completed-avatar" aria-hidden="true"><img src="/assets/check.svg" alt=""></div><div class="turn-body"><p class="turn-author">VisitReady Agent</p><h2>诊前清单已经准备好</h2><p>最终文件只包含本次确认后的结构化信息，请在临时会话到期前下载。</p><a id="export-button" class="download-button" href="#" download="visit-ready.md"><img src="/assets/download.svg" alt="">下载 Markdown</a></div></article>
           </div>
         </div>
       </section>
-    </div>
-  </main>
 
-  <footer><span>VisitReady Agent · 教学演示项目</span><span>不是医疗器械，不替代专业诊疗</span></footer>
+      <div class="composer-dock" data-testid="input-panel">
+        <div class="context-strip" aria-label="当前 Agent 上下文">
+          <span class="context-item"><i aria-hidden="true"></i>本机服务内保留 {{.Retention}}</span>
+          <span class="composer-state" id="composer-state">等待你的描述</span>
+        </div>
+        <form class="composer" id="input-form" data-testid="composer" novalidate><label class="sr-only" for="health-input">输入健康描述</label><textarea id="health-input" name="health-description" maxlength="6000" rows="1" aria-describedby="composer-help char-count input-error privacy-notice" placeholder="描述这次需要整理的健康情况…"></textarea><div class="composer-inline-error" id="input-error" role="alert" tabindex="-1" hidden></div><div class="composer-tools"><div class="composer-options"><span class="privacy-notice" id="privacy-notice">身份信息会在发送前自动拦截</span><label class="compact-check"><input id="search-toggle" type="checkbox"><span>可信资料检索</span></label></div><div class="composer-submit"><span id="char-count">0 / 6000</span><button class="send-button" id="start-button" type="submit" aria-label="发送并开始整理">↑</button></div></div><p class="composer-help" id="composer-help">Enter 发送 · Shift + Enter 换行 · 联网检索可能增加等待时间</p></form>
+        <form class="composer clarification-composer" id="clarification-form" hidden novalidate><label class="sr-only" for="clarification-input">补充回答</label><textarea id="clarification-input" maxlength="2000" rows="1" aria-describedby="clarification-help clarification-count session-error" placeholder="回答重点问题，也可以直接补充其他相关信息…"></textarea><div class="composer-tools"><span id="clarification-help">每轮只问 1–3 个重点；不确定可以如实说明</span><div class="composer-submit"><button class="add-context-button" id="add-context-button" type="button">补充其他信息</button><span id="clarification-count">0 / 2000</span><button class="send-button" id="clarify-button" type="submit" aria-label="提交补充">↑</button></div></div></form>
+        <p class="legal-line">VisitReady 仅整理你提供的信息，不做诊断，也不替代专业诊疗。</p>
+      </div>
+    </main>
+  </div>
+  <dialog class="delete-session-dialog" id="delete-session-dialog" aria-labelledby="delete-session-title" aria-describedby="delete-session-description">
+    <div class="dialog-body">
+      <p class="dialog-kicker">不可撤销</p>
+      <h2 id="delete-session-title">永久删除这次会话？</h2>
+      <p id="delete-session-description">服务器中的结构化结果和访谈上下文都会立即删除，之后无法从往期会话恢复。</p>
+      <div class="dialog-actions"><button class="secondary-button" id="cancel-delete-session-button" type="button">保留会话</button><button class="danger-button" id="confirm-delete-session-button" type="button">永久删除</button></div>
+    </div>
+  </dialog>
+  <dialog class="device-access-dialog" id="device-access-dialog" aria-labelledby="device-access-title">
+    <form method="dialog" class="dialog-body" id="device-access-form">
+      <p class="dialog-kicker">个人访问密钥</p>
+      <h2 id="device-access-title">在另一台设备恢复往期会话</h2>
+      <p>此密钥等同于会话访问权限。只在你信任的设备间传递，不要发送给其他人。</p>
+      <label for="device-access-key">访问密钥</label>
+      <input id="device-access-key" autocomplete="off" spellcheck="false" inputmode="text">
+      <div class="dialog-actions"><button class="secondary-button" id="copy-device-key-button" type="button">复制当前密钥</button><button class="primary-button" id="import-device-key-button" type="button">导入并恢复</button><button class="text-button" value="cancel">关闭</button></div>
+      <p class="device-key-status" id="device-key-status" role="status"></p>
+    </form>
+  </dialog>
+  <dialog class="account-dialog" id="account-dialog" aria-labelledby="account-title" aria-describedby="account-copy">
+    <form class="dialog-body" id="account-form" novalidate>
+      <p class="dialog-kicker">个人账户</p>
+      <h2 id="account-title">登录以保护你的诊前记录</h2>
+      <p id="account-copy">账户用于保存和恢复你的会话。请不要在此填写病历、身份证号或联系方式以外的健康内容。</p>
+      <label for="account-email-input">邮箱</label>
+      <input id="account-email-input" type="email" autocomplete="email" maxlength="320" required>
+      <label for="account-password-input">密码</label>
+      <input id="account-password-input" type="password" autocomplete="current-password" minlength="12" maxlength="128" required>
+      <p class="account-error" id="account-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button class="secondary-button" id="account-mode-button" type="button">创建账户</button><button class="primary-button" id="account-submit-button" type="submit">登录</button></div>
+    </form>
+  </dialog>
+  <dialog class="account-menu-dialog" id="account-menu-dialog" aria-labelledby="account-menu-title">
+    <div class="dialog-body"><p class="dialog-kicker">当前账户</p><h2 id="account-menu-title">账户与会话</h2><p id="account-menu-email"></p><div class="dialog-actions"><button class="danger-button" id="account-logout-button" type="button">退出登录</button><button class="text-button" id="account-menu-close-button" type="button">关闭</button></div></div>
+  </dialog>
 </body>
 </html>

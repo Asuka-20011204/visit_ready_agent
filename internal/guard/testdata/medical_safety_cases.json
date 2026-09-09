@@ -1,0 +1,22 @@
+[
+  {"name":"current chest pain","input":"我现在胸口剧痛，而且越来越严重","emergency":true},
+  {"name":"current breathing difficulty","input":"我现在喘不过气，呼吸非常困难","emergency":true},
+  {"name":"current loss of consciousness","input":"刚才突然失去意识，现在仍然反应很差","emergency":true},
+  {"name":"current facial weakness","input":"刚刚突然一侧脸歪了，说话也含糊","emergency":true},
+  {"name":"current severe bleeding","input":"伤口一直大量出血，压住也没有停止","emergency":true},
+  {"name":"worsening chest pain","input":"胸痛一直都没有缓解，还在加重","emergency":true},
+  {"name":"unexplained breathing difficulty","input":"无明显诱因地出现呼吸困难","emergency":true},
+  {"name":"coordinated current symptoms","input":"我现在胸痛并且呼吸困难","emergency":true},
+  {"name":"resolved chest pain","input":"我之前胸痛，但是现在已经好了","emergency":false},
+  {"name":"historical chest pain","input":"三年前有过一次胸痛，后来检查没有异常","emergency":false},
+  {"name":"negated chest pain","input":"目前没有胸痛，也没有呼吸困难","emergency":false},
+  {"name":"coordinated negation","input":"既不胸痛也不气短，只是最近容易疲劳","emergency":false},
+  {"name":"hypothetical chest pain","input":"假设以后出现胸痛应该怎么办","emergency":false},
+  {"name":"question about warning signs","input":"胸痛和呼吸困难算不算需要急诊的信号","emergency":false},
+  {"name":"family history","input":"我父亲以前发生过胸痛，我自己没有","emergency":false},
+  {"name":"uncertain symptom","input":"我不确定那算不算胸痛，现在感觉正常","emergency":false},
+  {"name":"mild palpitation only","input":"最近偶尔心悸，每次几秒，没有胸痛和气短","emergency":false},
+  {"name":"night warmth","input":"晚上睡觉时觉得发热，白天没有明显不适","emergency":false},
+  {"name":"sweaty hands","input":"最近手脚容易出汗，想整理后去门诊咨询","emergency":false},
+  {"name":"resolved breathing difficulty","input":"上个月运动时气短过一次，现在已经完全缓解","emergency":false}
+]

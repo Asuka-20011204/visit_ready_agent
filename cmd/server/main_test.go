@@ -92,15 +92,15 @@ func TestStartupLogContainsNoConfiguredSecrets(t *testing.T) {
 	cfg := config.Config{
 		Mode:            config.ModeDemo,
 		LLMAPIKey:       "do-not-log-llm-key",
-		TavilyAPIKey:    "do-not-log-search-key",
-		TavilyEndpoint:  "https://api.tavily.com/search",
+		BochaAPIKey:     "do-not-log-search-key",
+		BochaEndpoint:   "https://api.bochaai.com/v1/web-search",
 		SessionTTL:      30 * time.Minute,
 		UpstreamTimeout: time.Second,
 	}
 	if _, _, err := buildHandler(cfg, logger); err != nil {
 		t.Fatalf("buildHandler() error = %v", err)
 	}
-	if strings.Contains(output.String(), cfg.LLMAPIKey) || strings.Contains(output.String(), cfg.TavilyAPIKey) {
+	if strings.Contains(output.String(), cfg.LLMAPIKey) || strings.Contains(output.String(), cfg.BochaAPIKey) {
 		t.Fatalf("startup logs exposed secrets: %s", output.String())
 	}
 	for _, line := range strings.Split(strings.TrimSpace(output.String()), "\n") {
@@ -144,14 +144,14 @@ func TestBuildHandlerRejectsInvalidProviderEndpoints(t *testing.T) {
 			},
 		},
 		{
-			name: "Tavily",
+			name: "Bocha",
 			change: func(cfg *config.Config) {
 				cfg.Mode = config.ModeLive
 				cfg.LLMEndpoint = "http://127.0.0.1:9999/v1/chat/completions"
 				cfg.LLMAPIKey = "test-only-key"
 				cfg.LLMModel = "test-model"
-				cfg.TavilyEndpoint = "http://public.example/search"
-				cfg.TavilyAPIKey = "test-only-key"
+				cfg.BochaEndpoint = "http://public.example/search"
+				cfg.BochaAPIKey = "test-only-key"
 			},
 		},
 	}
@@ -168,8 +168,8 @@ func TestBuildHandlerRejectsInvalidProviderEndpoints(t *testing.T) {
 
 func TestDemoModeNeverBuildsNetworkSearchClient(t *testing.T) {
 	cfg := validConfig()
-	cfg.TavilyEndpoint = "http://public.example/search"
-	cfg.TavilyAPIKey = "configured-but-must-not-be-used"
+	cfg.BochaEndpoint = "http://public.example/search"
+	cfg.BochaAPIKey = "configured-but-must-not-be-used"
 	client, err := buildSearchClient(cfg, http.DefaultClient)
 	if err != nil || client != nil {
 		t.Fatalf("buildSearchClient() = %#v, %v", client, err)
@@ -226,7 +226,7 @@ func validConfig() config.Config {
 	return config.Config{
 		Mode:              config.ModeDemo,
 		Addr:              "127.0.0.1:0",
-		TavilyEndpoint:    "https://api.tavily.com/search",
+		BochaEndpoint:     "https://api.bochaai.com/v1/web-search",
 		SessionTTL:        30 * time.Minute,
 		CleanupInterval:   10 * time.Millisecond,
 		UpstreamTimeout:   time.Second,

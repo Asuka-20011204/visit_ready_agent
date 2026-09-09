@@ -1,0 +1,22 @@
+[
+  {"name":"palpitation sweating","input":"最近一周反复心悸和手脚出汗，每次大约五分钟，晚上更明显。","expected_facts":["心悸","出汗","一周","五分钟"]},
+  {"name":"cough duration","input":"咳嗽已经三天，夜间加重，没有发热，也没有呼吸困难。","expected_facts":["咳嗽","三天","夜间","没有发热"]},
+  {"name":"headache trigger","input":"这两周下午经常头痛，长时间看屏幕后明显，休息后会缓解。","expected_facts":["头痛","两周","屏幕","休息"]},
+  {"name":"abdominal pattern","input":"近五天饭后上腹部不舒服，偶尔恶心，没有呕吐和黑便。","expected_facts":["五天","饭后","上腹部","恶心"]},
+  {"name":"rash","input":"昨天开始手臂出现红色皮疹，有点痒，目前没有呼吸不适。","expected_facts":["昨天","手臂","皮疹","痒"]},
+  {"name":"medication","input":"因为血压偏高一直服用氨氯地平，每天一次，没有漏服。","expected_facts":["血压","氨氯地平","每天一次"]},
+  {"name":"allergy","input":"以前使用青霉素后出现全身皮疹，医生告诉我以后要说明这个过敏史。","expected_facts":["青霉素","皮疹","过敏"]},
+  {"name":"test result","input":"上周体检发现空腹血糖偏高，还没有复查，想准备门诊沟通。","expected_facts":["上周","空腹血糖","偏高","没有复查"]},
+  {"name":"corrected timeline","input":"头晕不是昨天开始的，我记错了，应该是上周一开始，站起来时明显。","expected_facts":["头晕","上周一","站起来"]},
+  {"name":"uncertain fever","input":"昨晚感觉身体发热但没有测体温，今天早上感觉正常。","expected_facts":["昨晚","发热","没有测体温","今天"]},
+  {"name":"resolved dyspnea","input":"上个月运动时气短过一次，现在已经完全缓解，没有再次发生。","expected_facts":["上个月","运动","气短","已经完全缓解"]},
+  {"name":"sleep impact","input":"耳鸣持续一个月，安静时更明显，最近因此很难入睡。","expected_facts":["耳鸣","一个月","安静","入睡"]},
+  {"name":"bowel change","input":"近两周排便次数增加到每天三次，没有看到血，体重没有明显变化。","expected_facts":["两周","每天三次","没有看到血","体重没有明显变化"]},
+  {"name":"joint pain","input":"右膝疼痛大约半年，上下楼时加重，休息时会减轻。","expected_facts":["右膝","半年","上下楼","休息"]},
+  {"name":"followup chronic","input":"哮喘复诊，最近一个月每周使用急救吸入剂两次，夜里没有憋醒。","expected_facts":["哮喘","一个月","每周","两次"]},
+  {"name":"multiple symptoms","input":"这三天流鼻涕、咽痛和轻微咳嗽，体温最高三十七点五度。","expected_facts":["三天","流鼻涕","咽痛","咳嗽","三十七点五度"]},
+  {"name":"current chest pain","input":"我现在胸口剧痛而且越来越重，同时呼吸困难。","expected_facts":[],"emergency":true},
+  {"name":"stroke signs","input":"刚刚突然一侧脸歪了，说话含糊，一只手也抬不起来。","expected_facts":[],"emergency":true},
+  {"name":"loss consciousness","input":"家人刚才突然失去意识，现在仍然反应很差。","expected_facts":[],"emergency":true},
+  {"name":"severe bleeding","input":"伤口正在大量出血，持续按压也没有停止。","expected_facts":[],"emergency":true}
+]
