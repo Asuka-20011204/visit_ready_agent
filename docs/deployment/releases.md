@@ -19,29 +19,36 @@ go vet ./...
 git add .
 git commit -m "feat: prepare visit ready release"
 git push origin main
-git tag v1.0.3
-git push origin v1.0.3
+git tag v1.0.4
+git push origin v1.0.4
 ```
 
-不要移动或覆盖已经发布的 tag。`v1.0.3` 已经发布，后续修复必须使用新标签（例如 `v1.0.4`）。等待 `release-image` 工作流成功后，确认仓库出现：
+不要移动或覆盖已经发布的 tag。`v1.0.4` 已经发布，后续修复必须使用新标签（例如 `v1.0.5`）。等待 `release-image` 工作流成功后，确认仓库出现：
 
 ```text
-docker.io/asuka20011204/visit-ready-agent:1.0.3
-ghcr.io/asuka-20011204/visit-ready-agent:1.0.3
+docker.io/asuka20011204/visit-ready-agent:1.0.4
+ghcr.io/asuka-20011204/visit-ready-agent:1.0.4
 ```
 
 发布工作流会生成 SBOM/provenance，并在 Job Summary 输出镜像 digest。记录该 digest 和 40 位提交 SHA；生产部署把它们传给一键脚本。安装脚本从 `main` 下载，脚本会校验镜像 OCI revision 并从同一提交下载 Compose。
 
 具体获取路径：打开 GitHub 仓库的 `Actions` -> `release-image` -> 对应成功版本 -> `Summary`。`publish` Job 对应 GHCR，`publish-dockerhub` Job 对应 Docker Hub。复制所选 Job 的 `Source commit` 与 `Published digest`；不要把一个仓库的 digest 用于另一个仓库。
 
-当前 `v1.0.3` 的记录如下：
+当前 `v1.0.4` 的记录如下：
 
 | 镜像仓库 | SourceCommit | ImageDigest |
 | --- | --- | --- |
-| Docker Hub（脚本默认） | `fcc7021129d15cdaa9df75175559a0cf233c2c67` | `sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e` |
+| Docker Hub（脚本默认） | `70dbb69b841c9039882b5ab52f0eff6fc3605c78` | `sha256:6a8132ecbb233061c8f11beaec569cc55422431ad68a3337ee34b4e900b494e1` |
+| GHCR | `70dbb69b841c9039882b5ab52f0eff6fc3605c78` | `sha256:d0e4229c50f4f2b9b8a1178861f63b7bb7e4f3f25f3d6a0fc5b5fbf04b959743` |
+
+上一成功版本 `v1.0.3`：
+
+| 镜像仓库 | SourceCommit | ImageDigest |
+| --- | --- | --- |
+| Docker Hub | `fcc7021129d15cdaa9df75175559a0cf233c2c67` | `sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e` |
 | GHCR | `fcc7021129d15cdaa9df75175559a0cf233c2c67` | `sha256:bb5d0dcd644ecf1237dae869d22cc8697719e370ef47255b5a469421970ba916` |
 
-上一成功版本 `v1.0.2`：
+再上一成功版本 `v1.0.2`：
 
 | 镜像仓库 | SourceCommit | ImageDigest |
 | --- | --- | --- |
@@ -52,35 +59,35 @@ ghcr.io/asuka-20011204/visit-ready-agent:1.0.3
 
 ```powershell
 docker login
-git tag v1.0.3
-git push origin v1.0.3
+git tag v1.0.4
+git push origin v1.0.4
 .\scripts\publish-release.ps1 `
-  -Version 1.0.3 `
+  -Version 1.0.4 `
   -RegistryImage docker.io/asuka20011204/visit-ready-agent `
   -Push
 ```
 
-脚本要求工作区干净、`v1.0.3` 正好指向当前完整提交且该 tag 已推送到 `origin`；任一 Git、Go 或 Docker 命令失败都会终止发布。Docker Hub 仓库应启用不可变标签策略，进一步防止覆盖已发布版本。
+脚本要求工作区干净、`v1.0.4` 正好指向当前完整提交且该 tag 已推送到 `origin`；任一 Git、Go 或 Docker 命令失败都会终止发布。Docker Hub 仓库应启用不可变标签策略，进一步防止覆盖已发布版本。
 
 ## 让其他机器更新
 
 其他机器不会因为仓库出现新镜像而自动替换运行中的容器。发布成功后，先从 `main` 下载安装脚本，再在每台机器明确执行对应更新命令：
 
 ```powershell
-$SourceCommit = 'fcc7021129d15cdaa9df75175559a0cf233c2c67'
-$ImageDigest = 'sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e'
+$SourceCommit = '70dbb69b841c9039882b5ab52f0eff6fc3605c78'
+$ImageDigest = 'sha256:6a8132ecbb233061c8f11beaec569cc55422431ad68a3337ee34b4e900b494e1'
 Invoke-WebRequest `
   "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-windows.ps1" `
   -OutFile bootstrap-windows.ps1
 Set-ExecutionPolicy -Scope Process Bypass
-.\bootstrap-windows.ps1 -Version 1.0.3 `
+.\bootstrap-windows.ps1 -Version 1.0.4 `
   -ExpectedSourceCommit $SourceCommit `
   -ExpectedImageDigest $ImageDigest
 ```
 
 ```bash
-SOURCE_COMMIT='fcc7021129d15cdaa9df75175559a0cf233c2c67'
-IMAGE_DIGEST='sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e'
+SOURCE_COMMIT='70dbb69b841c9039882b5ab52f0eff6fc3605c78'
+IMAGE_DIGEST='sha256:6a8132ecbb233061c8f11beaec569cc55422431ad68a3337ee34b4e900b494e1'
 curl --proto '=https' --proto-redir '=https' -fsSL \
   "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-server.sh" \
   -o bootstrap-server.sh
@@ -88,7 +95,7 @@ chmod +x bootstrap-server.sh
 sudo env EXPECTED_SOURCE_COMMIT="$SOURCE_COMMIT" \
   EXPECTED_IMAGE_DIGEST="$IMAGE_DIGEST" \
   REGISTRY_IMAGE=docker.io/asuka20011204/visit-ready-agent \
-  ./bootstrap-server.sh 1.0.3
+  ./bootstrap-server.sh 1.0.4
 ```
 
 建议先升级测试机并完成账号登录、历史恢复和一次 Agent 流程，再分批升级生产机。不要使用定时拉取 `latest` 的 Watchtower 作为医疗数据服务默认更新策略，因为它绕过质量确认和迁移检查。
