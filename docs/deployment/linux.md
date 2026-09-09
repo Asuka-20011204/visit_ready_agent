@@ -4,13 +4,13 @@
 
 ## Ubuntu 空白主机
 
-先从 GitHub Actions 的发布摘要取得 40 位源码提交和镜像 digest。安装脚本也按该提交下载，避免移动 tag 改变 root 将执行的内容：
+安装脚本从 `main` 下载；应用镜像和 Compose 仍由发布摘要中的提交 SHA 与 digest 固定。不要用镜像构建提交去下载安装脚本。
 
 ```bash
 SOURCE_COMMIT='fcc7021129d15cdaa9df75175559a0cf233c2c67'
 IMAGE_DIGEST='sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e'
 curl --proto '=https' --proto-redir '=https' -fsSL \
-  "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/$SOURCE_COMMIT/scripts/bootstrap-server.sh" \
+  "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-server.sh" \
   -o bootstrap-server.sh
 chmod +x bootstrap-server.sh
 sudo env INSTALL_DOCKER=true \

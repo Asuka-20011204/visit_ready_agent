@@ -1,3 +1,8 @@
+# Visit Ready Windows installer.
+# Download this file from the main branch so bootstrap logic stays current.
+# Pin the application image with -ExpectedSourceCommit and -ExpectedImageDigest.
+# Compose files are fetched from the image OCI revision, not this installer commit.
+
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Download this installer from the main branch so bootstrap logic stays current.
+# Pin the application image with EXPECTED_SOURCE_COMMIT and EXPECTED_IMAGE_DIGEST.
+# Compose files are fetched from the image OCI revision, not this installer commit.
+
 usage() {
   cat <<'EOF'
 Usage: bootstrap-server.sh <version>

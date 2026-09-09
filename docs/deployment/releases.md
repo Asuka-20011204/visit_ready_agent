@@ -30,7 +30,7 @@ docker.io/asuka20011204/visit-ready-agent:1.0.3
 ghcr.io/asuka-20011204/visit-ready-agent:1.0.3
 ```
 
-发布工作流会生成 SBOM/provenance，并在 Job Summary 输出镜像 digest。记录该 digest 和 40 位提交 SHA；生产部署把它们传给一键脚本，脚本会校验镜像 OCI revision 并从同一提交下载 Compose。
+发布工作流会生成 SBOM/provenance，并在 Job Summary 输出镜像 digest。记录该 digest 和 40 位提交 SHA；生产部署把它们传给一键脚本。安装脚本从 `main` 下载，脚本会校验镜像 OCI revision 并从同一提交下载 Compose。
 
 具体获取路径：打开 GitHub 仓库的 `Actions` -> `release-image` -> 对应成功版本 -> `Summary`。`publish` Job 对应 GHCR，`publish-dockerhub` Job 对应 Docker Hub。复制所选 Job 的 `Source commit` 与 `Published digest`；不要把一个仓库的 digest 用于另一个仓库。
 
@@ -64,19 +64,29 @@ git push origin v1.0.3
 
 ## 让其他机器更新
 
-其他机器不会因为仓库出现新镜像而自动替换运行中的容器。发布成功后，在每台机器明确执行对应更新命令：
+其他机器不会因为仓库出现新镜像而自动替换运行中的容器。发布成功后，先从 `main` 下载安装脚本，再在每台机器明确执行对应更新命令：
 
 ```powershell
 $SourceCommit = 'fcc7021129d15cdaa9df75175559a0cf233c2c67'
 $ImageDigest = 'sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e'
+Invoke-WebRequest `
+  "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-windows.ps1" `
+  -OutFile bootstrap-windows.ps1
+Set-ExecutionPolicy -Scope Process Bypass
 .\bootstrap-windows.ps1 -Version 1.0.3 `
   -ExpectedSourceCommit $SourceCommit `
   -ExpectedImageDigest $ImageDigest
 ```
 
 ```bash
-sudo env EXPECTED_SOURCE_COMMIT='fcc7021129d15cdaa9df75175559a0cf233c2c67' \
-  EXPECTED_IMAGE_DIGEST='sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e' \
+SOURCE_COMMIT='fcc7021129d15cdaa9df75175559a0cf233c2c67'
+IMAGE_DIGEST='sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e'
+curl --proto '=https' --proto-redir '=https' -fsSL \
+  "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-server.sh" \
+  -o bootstrap-server.sh
+chmod +x bootstrap-server.sh
+sudo env EXPECTED_SOURCE_COMMIT="$SOURCE_COMMIT" \
+  EXPECTED_IMAGE_DIGEST="$IMAGE_DIGEST" \
   REGISTRY_IMAGE=docker.io/asuka20011204/visit-ready-agent \
   ./bootstrap-server.sh 1.0.3
 ```

@@ -2,11 +2,13 @@
 
 适用于 Windows 10/11 + Docker Desktop。无需 Go、Node.js 或 Git；首次运行前启动 Docker Desktop，并确认 `docker compose version` 可用。
 
+安装脚本从 `main` 下载；应用镜像和 Compose 仍由发布摘要中的 `SourceCommit` 与 `ImageDigest` 固定。不要用镜像构建提交去下载安装脚本，否则会拿到旧的备份逻辑。
+
 ## 获取 SourceCommit 和 ImageDigest
 
 这两个值来自成功的镜像发布记录，不是自行生成的随机值：
 
-- `SourceCommit`：该版本标签实际构建的 40 位 Git 提交 SHA，用于确保下载的部署脚本、Compose 文件与镜像来自同一份源码。
+- `SourceCommit`：该版本标签实际构建的 40 位 Git 提交 SHA。安装脚本用它核对镜像 OCI revision，并从同一提交下载 Compose。
 - `ImageDigest`：镜像仓库为该镜像内容生成的 `sha256:` 摘要。Docker Hub 和 GHCR 的摘要可能不同，必须使用与 `RegistryImage` 相同仓库的摘要。
 
 在 GitHub 页面打开仓库，依次进入 `Actions` -> `release-image` -> 选择成功的版本运行（例如 `v1.0.3`）-> `Summary`。页面底部有两个发布 Job：
@@ -32,12 +34,11 @@ gh run view 34370258046 --log |
 
 ## 首次 Demo
 
-从发布工作流摘要复制 40 位源码提交。即使是 Demo，脚本也固定从不可变提交下载，因为它拥有 Docker 和部署目录的写权限。`v1.0.3` 示例：
+先从 `main` 下载当前安装脚本，再部署不可变的 `v1.0.3` 镜像：
 
 ```powershell
-$SourceCommit = 'fcc7021129d15cdaa9df75175559a0cf233c2c67'
 Invoke-WebRequest `
-  "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/$SourceCommit/scripts/bootstrap-windows.ps1" `
+  "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-windows.ps1" `
   -OutFile bootstrap-windows.ps1
 Set-ExecutionPolicy -Scope Process Bypass
 .\bootstrap-windows.ps1 -Version 1.0.3 -Mode demo
@@ -53,7 +54,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 $SourceCommit = 'fcc7021129d15cdaa9df75175559a0cf233c2c67'
 $ImageDigest = 'sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e'
 Invoke-WebRequest `
-  "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/$SourceCommit/scripts/bootstrap-windows.ps1" `
+  "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-windows.ps1" `
   -OutFile bootstrap-windows.ps1
 Set-ExecutionPolicy -Scope Process Bypass
 .\bootstrap-windows.ps1 -Version 1.0.3 -Mode live `
@@ -61,10 +62,14 @@ Set-ExecutionPolicy -Scope Process Bypass
   -ExpectedImageDigest $ImageDigest
 ```
 
-如果已经下载过脚本，只需：
+如果已经从 `main` 下载过脚本，只需：
 
 ```powershell
-.\bootstrap-windows.ps1 -Version 1.0.3 -Mode live
+$SourceCommit = 'fcc7021129d15cdaa9df75175559a0cf233c2c67'
+$ImageDigest = 'sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e'
+.\bootstrap-windows.ps1 -Version 1.0.3 -Mode live `
+  -ExpectedSourceCommit $SourceCommit `
+  -ExpectedImageDigest $ImageDigest
 ```
 
 脚本会依次安全询问模型端点、模型密钥、模型名和可选博查密钥，自动生成 MySQL 密码与会话加密密钥。配置和 Compose 文件默认保存在 `%LOCALAPPDATA%\VisitReady`。
@@ -73,11 +78,14 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 ## 把已有 Live 升到 1.0.3
 
-已有 `%LOCALAPPDATA%\VisitReady` 且 `APP_MODE=live` 时，不要改 `.env`，直接重跑同一脚本。脚本会保留模型密钥、MySQL 卷和会话加密密钥：
+已有 `%LOCALAPPDATA%\VisitReady` 且 `APP_MODE=live` 时，不要改 `.env`。先重新下载 `main` 上的安装脚本，再升级镜像：
 
 ```powershell
 $SourceCommit = 'fcc7021129d15cdaa9df75175559a0cf233c2c67'
 $ImageDigest = 'sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e'
+Invoke-WebRequest `
+  "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-windows.ps1" `
+  -OutFile bootstrap-windows.ps1
 Set-ExecutionPolicy -Scope Process Bypass
 .\bootstrap-windows.ps1 -Version 1.0.3 `
   -ExpectedSourceCommit $SourceCommit `
@@ -104,13 +112,13 @@ Invoke-RestMethod http://127.0.0.1:8097/readyz
 
 ## 公网 Live
 
-从 GitHub Actions 的 `publish-dockerhub` 发布摘要复制 40 位源码提交和 `sha256:` 镜像摘要。按固定提交下载脚本，并把两项校验同时传给部署命令。下面是可直接执行的 `v1.0.3` Docker Hub 示例：
+从 GitHub Actions 的 `publish-dockerhub` 发布摘要复制 40 位源码提交和 `sha256:` 镜像摘要。安装脚本仍从 `main` 下载，镜像和 Compose 用发布摘要钉死。下面是可直接执行的 `v1.0.3` Docker Hub 示例：
 
 ```powershell
 $SourceCommit = 'fcc7021129d15cdaa9df75175559a0cf233c2c67'
 $ImageDigest = 'sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437ebc66e1e'
 Invoke-WebRequest `
-  "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/$SourceCommit/scripts/bootstrap-windows.ps1" `
+  "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-windows.ps1" `
   -OutFile bootstrap-windows.ps1
 Set-ExecutionPolicy -Scope Process Bypass
 .\bootstrap-windows.ps1 -Version 1.0.3 -Mode live `
@@ -134,7 +142,7 @@ $ImageDigest = 'sha256:bb5d0dcd644ecf1237dae869d22cc8697719e370ef47255b5a4694219
 
 ## 更新与回退
 
-发布 `1.1.0` 后执行：
+发布 `1.1.0` 后，重新下载 `main` 上的安装脚本再执行：
 
 ```powershell
 .\bootstrap-windows.ps1 -Version 1.1.0
