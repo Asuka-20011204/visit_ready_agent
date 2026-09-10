@@ -342,7 +342,7 @@ func TestShortEmergencyTextIsNotBlockedByClientSideLengthValidation(t *testing.T
 
 func TestDocumentUsesCurrentVersionedSafetyAssets(t *testing.T) {
 	document := servedBody(t, newHandler(t, "live"), "/")
-	for _, asset := range []string{"/assets/styles.css?v=20260910ex", "/assets/session-state.js?v=20260910o", "/assets/network.js?v=20260908g", "/assets/app.js?v=20260910bd"} {
+	for _, asset := range []string{"/assets/styles.css?v=20260910ex", "/assets/session-state.js?v=20260910o", "/assets/network.js?v=20260908g", "/assets/app.js?v=20260910be"} {
 		if !strings.Contains(document, asset) {
 			t.Fatalf("document does not reference current safety asset %q", asset)
 		}

@@ -808,6 +808,8 @@ function setWorking(active, button) {
   if (active) {
     activeWorkingButton = button;
     ui.threadTitle.textContent = "整理中";
+    placeWorkingState(button);
+    ui.working.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "nearest" });
     startWorkingTimer();
     renderComposerMode("working");
     return;
@@ -815,6 +817,16 @@ function setWorking(active, button) {
   stopWorkingTimer();
   if (activeWorkingButton === button) activeWorkingButton = null;
   renderComposerMode(composerModeForSession(currentSession));
+}
+
+// Keeps the progress turn next to the latest exchange instead of the static
+// first-round position, so follow-up rounds show progress after their own message.
+function placeWorkingState(button) {
+  const anchor = button === ui.clarify ? ui.clarificationUserTurn
+    : button === ui.confirm ? ui.review
+    : button === ui.retryRun ? ui.failed
+    : ui.initialUserTurn;
+  anchor?.after(ui.working);
 }
 
 function startWorkingTimer() {
