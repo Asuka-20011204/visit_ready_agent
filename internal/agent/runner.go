@@ -228,7 +228,7 @@ func (r *Runner) failedSession(session domain.Session, attempts int, retryable b
 	canRetry := retryable && attempts < maxRecoveryAttempts
 	if !retryable {
 		code = domain.FailurePermanent
-		message = "AI 返回的结果未通过安全校验，请重新开始。"
+		message = "本次处理未能完成，可以重试或换一种方式描述。"
 	} else if attempts >= maxRecoveryAttempts {
 		code = domain.FailureExhausted
 		message = "本次会话已达到自动恢复上限，请开始新的诊前准备。"

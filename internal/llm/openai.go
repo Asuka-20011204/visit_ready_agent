@@ -114,6 +114,16 @@ func NewOpenAICompatibleClient(endpoint, apiKey, model string, client *http.Clie
 	}, nil
 }
 
+// modelOutputError marks a failure caused by the model returning output the
+// deterministic boundary could not decode or validate. These are retryable:
+// the same input commonly succeeds on a later attempt, and the fault is the
+// model's output, never the user's description.
+type modelOutputError struct{ err error }
+
+func (e modelOutputError) Error() string   { return e.err.Error() }
+func (e modelOutputError) Unwrap() error   { return e.err }
+func (e modelOutputError) Retryable() bool { return true }
+
 func (c *OpenAICompatibleClient) Extract(ctx context.Context, input string) (domain.Extraction, error) {
 	userPrompt := "<patient_input>\n" + input + "\n</patient_input>"
 	started := time.Now()
@@ -125,24 +135,35 @@ func (c *OpenAICompatibleClient) Extract(ctx context.Context, input string) (dom
 
 	var result domain.Extraction
 	if err := decodeStrictJSON(content, &result); err != nil {
-		return domain.Extraction{}, fmt.Errorf("decode extraction: %w", err)
+		return domain.Extraction{}, modelOutputError{fmt.Errorf("decode extraction: %w", err)}
 	}
 	result = sanitizeOptionalExtraction(input, result)
 	if err := validateExtraction(input, result); err != nil {
-		return domain.Extraction{}, err
+		return domain.Extraction{}, modelOutputError{err}
 	}
 	return result, nil
 }
 
 func sanitizeOptionalExtraction(input string, result domain.Extraction) domain.Extraction {
 	hadStructuredPrompts := len(result.ClarificationPrompts) > 0
-	for index := range result.Facts {
-		content := strings.TrimSpace(result.Facts[index].Content)
-		if !groundedValue(result.Facts[index].SourceQuote, content) {
-			content = strings.TrimSpace(result.Facts[index].SourceQuote)
+	// Facts use the same drop-based policy as profiles and timeline: an
+	// ungrounded or empty fact is discarded instead of failing the whole
+	// extraction, because the model can misquote a source on a single pass.
+	facts := make([]domain.Fact, 0, len(result.Facts))
+	for _, fact := range result.Facts {
+		sourceQuote := strings.TrimSpace(fact.SourceQuote)
+		if strings.TrimSpace(fact.Category) == "" || sourceQuote == "" || !groundedQuote(input, sourceQuote) {
+			continue
 		}
-		result.Facts[index].Content = content
+		content := strings.TrimSpace(fact.Content)
+		if !groundedValue(sourceQuote, content) {
+			content = sourceQuote
+		}
+		fact.Content = content
+		fact.SourceQuote = sourceQuote
+		facts = append(facts, fact)
 	}
+	result.Facts = facts
 
 	profiles := make([]domain.SymptomProfile, 0, len(result.SymptomProfiles))
 	for _, profile := range result.SymptomProfiles {
@@ -474,7 +495,6 @@ func (c *OpenAICompatibleClient) completeStructuredJSON(ctx context.Context, sys
 
 func decodeStrictJSON(data []byte, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return err
 	}
@@ -519,9 +539,6 @@ func validateExtraction(input string, result domain.Extraction) error {
 	for _, fact := range result.Facts {
 		if strings.TrimSpace(fact.Category) == "" || strings.TrimSpace(fact.Content) == "" || strings.TrimSpace(fact.SourceQuote) == "" {
 			return errors.New("each fact requires category, content, and source_quote")
-		}
-		if !strings.Contains(input, strings.TrimSpace(fact.SourceQuote)) {
-			return errors.New("fact source_quote is not grounded in patient input")
 		}
 	}
 	for _, profile := range result.SymptomProfiles {

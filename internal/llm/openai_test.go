@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -191,6 +192,42 @@ func TestOpenAICompatibleClientRejectsUnsafeRiskAndIncompleteQuestions(t *testin
 			t.Fatalf("GenerateQuestions() accepted incomplete question: %s", content)
 		}
 		closeServer()
+	}
+}
+
+func TestOpenAICompatibleClientDropsUngroundedFactInsteadOfFailing(t *testing.T) {
+	content := `{"visit_goal":"准备说明胃部不适","facts":[{"category":"symptom","content":"饭后半小时胃痛","source_quote":"饭后半小时"},{"category":"symptom","content":"编造","source_quote":"模型编造的原文"}],"missing_fields":[],"clarification_questions":[],"search_queries":[]}`
+	client, closeServer := clientReturning(t, content)
+	defer closeServer()
+
+	result, err := client.Extract(context.Background(), "吃完饭以后胃会隐隐地疼，饭后半小时左右开始。")
+	if err != nil {
+		t.Fatalf("Extract() failed instead of dropping the ungrounded fact: %v", err)
+	}
+	if len(result.Facts) != 1 || result.Facts[0].SourceQuote != "饭后半小时" {
+		t.Fatalf("ungrounded fact was not dropped: %#v", result.Facts)
+	}
+}
+
+func TestOpenAICompatibleClientIgnoresUnknownJSONFields(t *testing.T) {
+	content := `{"visit_goal":"目标","facts":[{"category":"symptom","content":"咳嗽","source_quote":"咳嗽"}],"missing_fields":[],"clarification_questions":[],"search_queries":[],"model_extra_field":123,"vendor":{"nested":true}}`
+	client, closeServer := clientReturning(t, content)
+	defer closeServer()
+	if _, err := client.Extract(context.Background(), "我已经咳嗽三天。"); err != nil {
+		t.Fatalf("Extract() rejected unknown fields: %v", err)
+	}
+}
+
+func TestExtractModelOutputFailureIsRetryable(t *testing.T) {
+	client, closeServer := clientReturning(t, "not json")
+	defer closeServer()
+	_, err := client.Extract(context.Background(), "三天前开始咳嗽")
+	if err == nil {
+		t.Fatal("Extract() error = nil, want decode error")
+	}
+	var retryable interface{ Retryable() bool }
+	if !errors.As(err, &retryable) || !retryable.Retryable() {
+		t.Fatalf("model decode failure is not marked retryable: %v", err)
 	}
 }
 

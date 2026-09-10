@@ -583,7 +583,7 @@ func (h *handler) storeCreatedFailure(ctx context.Context, w http.ResponseWriter
 		return false
 	}
 	if !item.Failure.Retryable && item.Failure.Code != domain.FailureExhausted {
-		writeError(w, http.StatusBadGateway, domain.FailurePermanent, "AI 返回的结果未通过安全校验，请调整描述后重新开始。", requestID)
+		writeError(w, http.StatusBadGateway, domain.FailurePermanent, "本次处理未能完成，可以重试或换一种方式描述。", requestID)
 		return true
 	}
 	if err := h.createSession(ctx, item); err != nil {
