@@ -1088,6 +1088,9 @@ func mergeClarificationGlobals(session domain.Session, turns []domain.Clarificat
 			case "history":
 				for _, clause := range positiveClauses {
 					clause = clipRunes(clause, 160)
+					if !hasAny(clause, "病", "炎", "手术", "外伤", "骨折", "摔伤", "扭伤", "史", "菌", "感染", "瘤", "慢性") {
+						continue
+					}
 					if hasAny(clause, "外伤", "骨折", "手术", "摔伤", "扭伤") {
 						next.TraumaHistory = appendUniqueStrings(next.TraumaHistory, []string{clause})
 					} else {
@@ -1148,7 +1151,7 @@ func globalSlotLabel(global string) string {
 }
 
 func clauseDenies(clause string) bool {
-	return containsAnyPhrase(clause, "否认", "都没有", "都没有过", "从没有", "从来没", "没有", "没吃", "没用", "未用", "没在吃", "没在服", "未服", "无过敏", "无药物", "无慢性", "无既往", "没过敏", "不过敏")
+	return containsAnyPhrase(clause, "否认", "都没有", "都没有过", "从没有", "从来没", "没有", "没", "无", "未", "不", "正常", "差不多", "没吃", "没用", "没在", "没再", "不过敏", "没过敏")
 }
 
 func clarificationTargets(question string, profiles []domain.SymptomProfile) []int {
@@ -1457,12 +1460,26 @@ func normalizeFactEvidence(value string) string {
 
 func groundedSymptomProfiles(input string, profiles []domain.SymptomProfile, turns []domain.ClarificationTurn) []domain.SymptomProfile {
 	result := make([]domain.SymptomProfile, 0, len(profiles))
+	usedQuotes := make(map[string]struct{}, len(profiles))
 	for _, profile := range profiles {
 		profile.Name = strings.TrimSpace(profile.Name)
 		profile.SourceQuote = strings.TrimSpace(profile.SourceQuote)
-		if profile.Name == "" || !isGroundedQuote(input, profile.SourceQuote) || !isGroundedProfileName(profile.SourceQuote, profile.Name) {
+		if profile.Name == "" || !isGroundedQuote(input, profile.SourceQuote) {
 			continue
 		}
+		if !isGroundedProfileName(profile.SourceQuote, profile.Name) {
+			quoteKey := normalizeFactEvidence(profile.SourceQuote)
+			if _, duplicate := usedQuotes[quoteKey]; duplicate {
+				// The same quote already produced a profile; this one carries a
+				// wrong name and is a duplicate, not a real second symptom.
+				continue
+			}
+			// A grounded quote with an ungrounded name is a paraphrase (e.g.
+			// 胃这里会隐隐地疼 -> 胃痛). Keep the profile under the verbatim
+			// quote as its name instead of dropping the whole symptom.
+			profile.Name = profile.SourceQuote
+		}
+		usedQuotes[normalizeFactEvidence(profile.SourceQuote)] = struct{}{}
 		evidenceQuotes := make([]string, 0, len(profile.EvidenceQuotes))
 		for _, quote := range profile.EvidenceQuotes {
 			quote = strings.TrimSpace(quote)
