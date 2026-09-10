@@ -48,6 +48,8 @@ const ui = {
   missingSection: document.querySelector("#missing-section"), missingContext: document.querySelector("#missing-context"),
   nextActionsSection: document.querySelector("#next-actions-section"), nextActions: document.querySelector("#next-actions"),
   questions: document.querySelector("#questions-list"),
+  completedPack: document.querySelector("#completed-pack"),
+  reviewPack: document.querySelector("#review-panel .completed-pack"),
   sourcesSection: document.querySelector("#sources-section"),
   sources: document.querySelector("#sources-list"),
   confirm: document.querySelector("#confirm-button"),
@@ -55,11 +57,15 @@ const ui = {
   export: document.querySelector("#export-button"),
   emergency: document.querySelector("#emergency-panel"),
   emergencyMessage: document.querySelector("#emergency-message"),
+  emergencyEvidence: document.querySelector("#emergency-evidence"),
   emergencyExport: document.querySelector("#emergency-export-button"),
   failed: document.querySelector("#failed-panel"),
   failedMessage: document.querySelector("#failed-message"),
   failedDetail: document.querySelector("#failed-detail"),
+  failedEvidence: document.querySelector("#failed-evidence"),
   retryRun: document.querySelector("#retry-run-button"),
+  exportMeta: document.querySelector("#export-meta"),
+  accountRestore: document.querySelector("#account-restore-button"),
   events: document.querySelector("#agent-events"),
   runSummary: document.querySelector("#run-summary"),
   recoveryNotice: document.querySelector("#recovery-notice"),
@@ -168,6 +174,10 @@ ui.accountButton?.addEventListener("click", () => {
 });
 ui.accountLogout?.addEventListener("click", logoutAccount);
 ui.accountMenuClose?.addEventListener("click", () => ui.accountMenuDialog.close());
+ui.accountRestore?.addEventListener("click", () => {
+  ui.accountMenuDialog.close();
+  openDeviceAccessDialog();
+});
 ui.export.addEventListener("click", event => downloadSessionExport(event, "visit-ready.md"));
 ui.emergencyExport.addEventListener("click", event => downloadSessionExport(event, "visit-ready-emergency.md"));
 ui.insights.addEventListener("change", () => updateReviewProgress(currentSession?.facts || []));
@@ -239,6 +249,7 @@ async function submitClarification() {
     return;
   }
   renderClarificationUserTurn(answer);
+  ui.clarificationPanel.hidden = true;
   setWorking(true, ui.clarify);
   try {
     const session = await request(`/api/v1/sessions/${currentSession.id}/clarifications`, {
@@ -294,16 +305,52 @@ async function confirmSession() {
   }
 }
 
+function workspaceStatusLabel(session) {
+  switch (session?.status) {
+    case "waiting_clarification":
+      return "补充中";
+    case "waiting_review":
+      return "核对中";
+    case "completed":
+      return "清单就绪";
+    case "emergency":
+      return "紧急处理";
+    case "failed":
+      return "处理中断";
+    default:
+      return sessionTitle(session);
+  }
+}
+
+function sourceEvidenceText(session) {
+  const raw = String(currentRawInput || "").trim();
+  if (raw) return raw.length > 120 ? `${raw.slice(0, 118)}…` : raw;
+  const quotes = (session?.facts || []).map(fact => String(fact.source_quote || "").trim()).filter(Boolean);
+  if (quotes.length) return quotes.slice(0, 2).join(" / ");
+  const risks = (session?.risk_signals || []).map(signal => String(signal.source_quote || signal.evidence || "").trim()).filter(Boolean);
+  if (risks.length) return risks.slice(0, 2).join(" / ");
+  const message = String(ui.initialUserMessage?.textContent || "").trim();
+  if (message && !message.startsWith("初始描述已提交")) return message.length > 120 ? `${message.slice(0, 118)}…` : message;
+  return "";
+}
+
+function renderEvidenceBlock(node, text) {
+  if (!node) return;
+  const value = String(text || "").trim();
+  node.hidden = !value;
+  node.textContent = value ? `原文：${value}` : "";
+}
+
 function renderSession(session, options = {}) {
   clearSectionError("session");
   ui.empty.hidden = true;
   ui.working.hidden = true;
   ui.expired.hidden = true;
   ui.session.hidden = false;
-  ui.threadTitle.textContent = sessionTitle(session);
-	ui.deleteSession.hidden = false;
+  ui.threadTitle.textContent = workspaceStatusLabel(session);
   const emergency = session.status === "emergency";
   const failed = session.status === "failed";
+  ui.deleteSession.hidden = emergency || session.status === "completed";
   ui.visitGoal.disabled = session.status === "completed" || emergency;
   renderEvents(session.events || []);
   if (!scheduleSessionExpiry(session)) return;
@@ -318,9 +365,17 @@ function renderSession(session, options = {}) {
   ui.reviewBadge.textContent = session.status === "completed" ? "已确认" : "等待确认";
   ui.reviewActions.hidden = session.status === "completed";
 
+  if (emergency || failed) {
+    const evidence = sourceEvidenceText(session);
+    if (evidence && !String(ui.initialUserMessage?.textContent || "").trim()) {
+      ui.initialUserTurn.hidden = false;
+      ui.initialUserMessage.textContent = evidence;
+    }
+  }
   if (emergency) {
     ui.assistantLead.textContent = "已停止后续模型、检索和追问步骤，并进入紧急安全处理。";
     ui.emergencyMessage.textContent = session.emergency_message || "这些表现正在发生或明显加重，请立即联系当地急救服务或前往急诊。";
+    renderEvidenceBlock(ui.emergencyEvidence, sourceEvidenceText(session));
     ui.emergencyExport.href = `/api/v1/sessions/${session.id}/export`;
     ui.emergency.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "nearest" });
   } else if (failed) {
@@ -328,6 +383,7 @@ function renderSession(session, options = {}) {
     ui.assistantLead.textContent = "处理在完成前中断，但这次会话和必要上下文仍然保留。";
     ui.failedMessage.textContent = failure.message || "本次内容已保留，可以从中断处重新尝试，无需再次填写。";
     ui.failedDetail.textContent = failureDetail(failure);
+    renderEvidenceBlock(ui.failedEvidence, sourceEvidenceText(session));
     ui.retryRun.hidden = !failure.retryable;
     ui.retryRun.disabled = !failure.retryable;
     ui.failed.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "nearest" });
@@ -363,7 +419,14 @@ function renderSession(session, options = {}) {
   }
   if (session.status === "completed") {
     ui.export.href = `/api/v1/sessions/${session.id}/export`;
-    ui.completed.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "nearest" });
+    const actionCount = (session.action_items || []).length || (session.questions || []).filter(question => question.category === "visit_preparation").length;
+    const questionCount = Math.min(4, (session.questions || []).length);
+    if (ui.exportMeta) ui.exportMeta.textContent = `已包含 ${actionCount} 条准备 / ${questionCount} 个问题`;
+    if (ui.reviewPack && ui.completedPack && ui.reviewPack.children.length && !ui.completedPack.children.length) {
+      ui.completedPack.replaceChildren(...Array.from(ui.reviewPack.children));
+    }
+  } else if (ui.completedPack && ui.reviewPack && ui.completedPack.children.length && !ui.reviewPack.children.length) {
+    ui.reviewPack.replaceChildren(...Array.from(ui.completedPack.children));
   }
   renderComposerMode(composerModeForSession(session));
   if (waiting || reviewing) revealLatestConversation();
@@ -376,15 +439,19 @@ function revealLatestConversation() {
     const root = ui.threadViewport;
     const target = !ui.review.hidden ? (ui.review.querySelector(".artifact-head") || ui.review) : (!ui.clarificationPanel.hidden ? ui.clarificationPanel : null);
     if (target && root) {
-      const top = target.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop - 16;
-      root.scrollTo({ top: Math.max(0, top), behavior: reducedMotion() ? "auto" : "smooth" });
+      if (!ui.review.hidden) {
+        root.scrollTo({ top: 0, behavior: "auto" });
+        return;
+      }
+      const top = target.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop - 8;
+      root.scrollTo({ top: Math.max(0, top), behavior: reducedMotion() ? "auto" : "auto" });
       return;
     }
     root.scrollTo({
       top: ui.threadViewport.scrollHeight,
       behavior: reducedMotion() ? "auto" : "smooth"
     });
-  }, 80);
+  }, 120);
 }
 
 function renderConversationSummary(summary, interview) {
@@ -423,9 +490,10 @@ function renderContradictions(items) {
   }));
 }
 function renderInitialUserTurn(message) {
+  const value = String(message || "").trim();
   ui.empty.hidden = true;
-  ui.initialUserTurn.hidden = false;
-  ui.initialUserMessage.textContent = message;
+  ui.initialUserTurn.hidden = !value;
+  ui.initialUserMessage.textContent = value;
 }
 function renderClarificationUserTurn(message) {
   ui.clarificationUserTurn.hidden = false;
@@ -467,55 +535,107 @@ function renderEvents(events) {
 function renderFacts(facts) {
   ui.factCount.textContent = `${facts.length} 项`;
   const normalizedFacts = facts.map((fact, index) => ({ ...fact, id: factID(fact, index) }));
-  ui.facts.replaceChildren(...normalizedFacts.map(fact => {
-    const row = document.createElement("div");
-    row.className = "fact-row";
-    row.dataset.factId = fact.id;
-    const mark = document.createElement("span");
-    mark.className = "fact-mark";
-    mark.setAttribute("aria-hidden", "true");
-    const content = document.createElement("div");
-    const category = document.createElement("span");
-    category.className = "fact-category";
-    category.textContent = categoryLabels[fact.category] || "其他";
-    const value = document.createElement("p");
-    value.className = "fact-content";
-    value.textContent = fact.content;
-    content.append(category, value);
-    const quoteText = String(fact.source_quote || "").trim();
-    if (quoteText && quoteText !== String(fact.content || "").trim()) {
-      const quote = document.createElement("p");
-      quote.className = "fact-quote";
-      quote.textContent = `原文依据：${quoteText}`;
-      content.append(quote);
-    }
-    const verification = document.createElement("input");
-    verification.type = "checkbox";
-    verification.className = "fact-verification";
-    verification.id = `fact-verification-${fact.id}`;
-    verification.setAttribute("aria-label", `核对事实：${fact.content}`);
-    verification.checked = verifiedFactIDs.has(fact.id);
-    verification.disabled = currentSession?.status === "completed";
-    verification.addEventListener("change", () => {
-      if (verification.checked) verifiedFactIDs.add(fact.id); else verifiedFactIDs.delete(fact.id);
-      updateReviewProgress(normalizedFacts);
-    });
-    row.append(mark, content, verification);
-    row.addEventListener("click", event => {
-      if (event.target === verification || verification.disabled) return;
-      verification.checked = !verification.checked;
-      verification.dispatchEvent(new Event("change"));
-    });
-    return row;
+  const categoryOrder = ["symptom", "timeline", "medication", "allergy", "test", "history", "other"];
+  const groups = [];
+  const seen = new Set();
+  categoryOrder.forEach(key => {
+    const items = normalizedFacts.filter(fact => (fact.category || "other") === key);
+    if (!items.length) return;
+    seen.add(key);
+    groups.push({ key, label: categoryLabels[key] || "其他", items });
+  });
+  normalizedFacts.forEach(fact => {
+    const key = fact.category || "other";
+    if (seen.has(key)) return;
+    seen.add(key);
+    groups.push({ key, label: categoryLabels[key] || "其他", items: normalizedFacts.filter(item => (item.category || "other") === key) });
+  });
+  ui.facts.replaceChildren(...groups.map(group => {
+    const section = document.createElement("section");
+    section.className = "fact-group";
+    section.dataset.category = group.key;
+    const heading = document.createElement("h3");
+    heading.className = "fact-group-title";
+    heading.textContent = group.label;
+    const list = document.createElement("div");
+    list.className = "fact-group-list";
+    list.append(...group.items.map(fact => {
+      const row = document.createElement("div");
+      row.className = "fact-row";
+      row.dataset.factId = fact.id;
+      const mark = document.createElement("span");
+      mark.className = "fact-mark";
+      mark.setAttribute("aria-hidden", "true");
+      const content = document.createElement("div");
+      content.className = "fact-body";
+      const value = document.createElement("p");
+      value.className = "fact-content";
+      value.textContent = fact.content;
+      content.append(value);
+      const quoteText = String(fact.source_quote || "").trim();
+      if (quoteText) {
+        const toggle = document.createElement("details");
+        toggle.className = "fact-quote-toggle";
+        const summary = document.createElement("summary");
+        summary.textContent = "查看原文依据";
+        const quote = document.createElement("p");
+        quote.className = "fact-quote";
+        quote.textContent = quoteText;
+        toggle.append(summary, quote);
+        content.append(toggle);
+      }
+      const verification = document.createElement("input");
+      verification.type = "checkbox";
+      verification.className = "fact-verification";
+      verification.id = `fact-verification-${fact.id}`;
+      verification.setAttribute("aria-label", `核对事实：${fact.content}`);
+      verification.checked = verifiedFactIDs.has(fact.id);
+      verification.disabled = currentSession?.status === "completed";
+      verification.addEventListener("change", () => {
+        if (verification.checked) verifiedFactIDs.add(fact.id); else verifiedFactIDs.delete(fact.id);
+        updateReviewProgress(normalizedFacts);
+      });
+      row.append(mark, content, verification);
+      row.addEventListener("click", event => {
+        if (verification.disabled || event.target === verification || event.target.closest(".fact-quote-toggle")) return;
+        verification.checked = !verification.checked;
+        verification.dispatchEvent(new Event("change"));
+      });
+      return row;
+    }));
+    section.append(heading, list);
+    return section;
   }));
   updateReviewProgress(normalizedFacts);
 }
 function updateReviewProgress(facts) {
   const reviewFacts = facts.map((fact, index) => ({ ...fact, id: fact.id || factID(fact, index) }));
   const count = reviewFacts.filter(fact => verifiedFactIDs.has(fact.id)).length;
+  const remainingFacts = Math.max(0, reviewFacts.length - count);
   const allFactsVerified = reviewFacts.length > 0 && reviewFacts.every(fact => verifiedFactIDs.has(fact.id));
+  const insightsChecked = Boolean(ui.insights.checked);
   ui.reviewProgress.textContent = `已核对 ${count} / ${reviewFacts.length}`;
-  ui.confirm.disabled = currentSession?.status === "completed" || !allFactsVerified || !ui.insights.checked;
+  if (currentSession?.status === "waiting_review") {
+    ui.threadTitle.textContent = `核对中 · ${count}/${reviewFacts.length}`;
+  }
+  const confirmLabel = ui.confirm.querySelector("span") || ui.confirm;
+  if (currentSession?.status === "completed") {
+    confirmLabel.textContent = "完成核对";
+    ui.confirm.disabled = true;
+    return;
+  }
+  if (!allFactsVerified) {
+    confirmLabel.textContent = `还需确认 ${remainingFacts} 项`;
+    ui.confirm.disabled = true;
+    return;
+  }
+  if (!insightsChecked) {
+    confirmLabel.textContent = "还需确认准备建议";
+    ui.confirm.disabled = true;
+    return;
+  }
+  confirmLabel.textContent = "完成核对";
+  ui.confirm.disabled = false;
 }
 
 function renderRiskSignals(riskSignals) {
@@ -573,7 +693,7 @@ function renderMissingContext(fields) {
   }));
 }
 function renderQuestions(questions) {
-  ui.questions.replaceChildren(...questions.map(question => {
+  ui.questions.replaceChildren(...questions.slice(0, 4).map(question => {
     const item = document.createElement("li");
     const label = document.createElement("label");
     label.className = "question-row";
@@ -582,12 +702,7 @@ function renderQuestions(questions) {
     const content = document.createElement("span");
     const text = document.createElement("strong");
     text.textContent = question.text;
-    content.append(priorityBadge(question.priority), text);
-    if (question.reason) {
-      const reason = document.createElement("small");
-      reason.textContent = `沟通目的：${question.reason}`;
-      content.append(reason);
-    }
+    content.append(text);
     label.append(checkbox, content);
     item.append(label);
     return item;
@@ -597,22 +712,21 @@ function renderActionItems(actionItems, questions) {
   const fallback = questions.filter(question => question.category === "visit_preparation").map(question => ({ title: question.text, reason: question.reason, priority: question.priority }));
   const items = actionItems.length ? actionItems : fallback;
   ui.nextActionsSection.hidden = items.length === 0;
-  ui.nextActions.replaceChildren(...items.map((action, index) => {
+  ui.nextActions.replaceChildren(...items.slice(0, 3).map((action, index) => {
     const item = document.createElement("li");
     const order = document.createElement("span");
-    order.textContent = String(index + 1).padStart(2, "0");
+    order.textContent = String(index + 1);
     const content = document.createElement("div");
     const title = document.createElement("strong");
     title.textContent = action.title;
-    const detail = document.createElement("p");
-    detail.textContent = action.detail || action.reason || "";
-    content.append(title, detail);
-    if (action.reason && action.detail) {
-      const reason = document.createElement("small");
-      reason.textContent = `作用：${action.reason}`;
-      content.append(reason);
+    content.append(title);
+    const detailText = (action.detail || action.reason || "").trim();
+    if (detailText) {
+      const detail = document.createElement("p");
+      detail.textContent = detailText;
+      content.append(detail);
     }
-    item.append(order, content, priorityBadge(action.priority));
+    item.append(order, content);
     return item;
   }));
 }
@@ -655,7 +769,7 @@ function composerModeForSession(session) {
     case "emergency":
       return "emergency";
     case "failed":
-      return session.failure?.retryable ? "failed" : "initial";
+      return "failed";
     case "waiting_clarification":
       return "clarification";
     case "waiting_review":
@@ -668,7 +782,7 @@ function composerModeForSession(session) {
 }
 
 function renderComposerMode(mode) {
-  ui.inputForm.hidden = mode !== "initial" && mode !== "failed";
+  ui.inputForm.hidden = mode !== "initial";
   ui.clarificationForm.hidden = mode !== "clarification";
   if (ui.reviewActions) ui.reviewActions.hidden = mode !== "review";
   const labels = {
@@ -678,11 +792,12 @@ function renderComposerMode(mode) {
     completed: "本次整理已完成",
     emergency: "已停止 Agent 流程，请立即寻求紧急帮助",
     failed: "处理已暂停，可以重新尝试",
+    working: "正在整理这次就诊信息",
     hidden: "Agent 上下文已暂停"
   };
   ui.composerState.textContent = labels[mode] || labels.hidden;
   if (mode === "clarification") requestAnimationFrame(() => ui.clarificationInput.focus({ preventScroll: true }));
-  if (mode === "initial" || mode === "failed") requestAnimationFrame(() => ui.input.focus({ preventScroll: true }));
+  if (mode === "initial") requestAnimationFrame(() => ui.input.focus({ preventScroll: true }));
 }
 
 function setWorking(active, button) {
@@ -692,9 +807,9 @@ function setWorking(active, button) {
   ui.working.hidden = !active;
   if (active) {
     activeWorkingButton = button;
-    ui.composerState.textContent = "Agent 正在处理";
+    ui.threadTitle.textContent = "整理中";
     startWorkingTimer();
-    renderComposerMode("hidden");
+    renderComposerMode("working");
     return;
   }
   stopWorkingTimer();
@@ -706,21 +821,26 @@ function startWorkingTimer() {
   stopWorkingTimer();
   workingStartedAt = Date.now();
   workingHeadersReceived = false;
-  ui.workingStatus.textContent = "请求已发送，等待 AI 生成结果";
-  updateWorkingTimer();
+  ui.workingStatus.textContent = "正在整理这次就诊信息";
+  ui.workingElapsed.textContent = "正在生成可核对结果";
   workingTimer = window.setInterval(updateWorkingTimer, 1000);
 }
 
 function markWorkingHeadersReceived() {
   workingHeadersReceived = true;
-  ui.workingStatus.textContent = "AI 已接收请求，正在生成结构化结果";
+  ui.workingStatus.textContent = "正在整理这次就诊信息";
+  ui.workingElapsed.textContent = "已开始生成可核对结果";
 }
 
 function updateWorkingTimer() {
   const elapsedSeconds = Math.max(0, Math.floor((Date.now() - workingStartedAt) / 1000));
+  if (elapsedSeconds < 1) {
+    ui.workingElapsed.textContent = workingHeadersReceived ? "已开始生成可核对结果" : "正在生成可核对结果";
+    return;
+  }
   ui.workingElapsed.textContent = `已等待 ${elapsedSeconds} 秒`;
   if (elapsedSeconds >= 45 && workingHeadersReceived) {
-    ui.workingStatus.textContent = "AI 仍在生成，复杂描述可能需要更久";
+    ui.workingStatus.textContent = "内容较多，整理还需要一点时间";
   }
 }
 
@@ -850,6 +970,8 @@ function toggleAccountMode() {
   accountMode = accountMode === "login" ? "register" : "login";
   ui.accountSubmitButton.textContent = accountMode === "login" ? "登录" : "创建账户";
   ui.accountModeButton.textContent = accountMode === "login" ? "创建账户" : "返回登录";
+  ui.accountTitle = document.querySelector("#account-title");
+  if (ui.accountTitle) ui.accountTitle.textContent = accountMode === "login" ? "登录后可在其他设备找回会话" : "创建账户后可在其他设备找回会话";
   ui.accountPasswordInput.autocomplete = accountMode === "login" ? "current-password" : "new-password";
   ui.accountError.hidden = true;
 }

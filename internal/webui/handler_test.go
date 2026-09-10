@@ -157,6 +157,9 @@ func TestAgentUIUsesAiryThreadCompositionTokens(t *testing.T) {
 	if strings.Contains(styles, "--canvas: #d9e1dc") {
 		t.Fatal("design system still uses the rejected dark gray-green canvas")
 	}
+	if strings.Contains(styles, `grid-template-areas: "intro paths"`) {
+		t.Fatal("welcome empty state still uses a two-column intro/paths grid")
+	}
 }
 
 func TestConversationHistoryPersistsOnlyBoundedSessionIDs(t *testing.T) {
@@ -339,7 +342,7 @@ func TestShortEmergencyTextIsNotBlockedByClientSideLengthValidation(t *testing.T
 
 func TestDocumentUsesCurrentVersionedSafetyAssets(t *testing.T) {
 	document := servedBody(t, newHandler(t, "live"), "/")
-	for _, asset := range []string{"/assets/styles.css?v=20260910x", "/assets/session-state.js?v=20260910n", "/assets/network.js?v=20260908g", "/assets/app.js?v=20260910x"} {
+	for _, asset := range []string{"/assets/styles.css?v=20260910ew", "/assets/session-state.js?v=20260910n", "/assets/network.js?v=20260908g", "/assets/app.js?v=20260910bc"} {
 		if !strings.Contains(document, asset) {
 			t.Fatalf("document does not reference current safety asset %q", asset)
 		}
@@ -443,6 +446,8 @@ func TestApprovedUIRequiresIndividualFactVerification(t *testing.T) {
 		"fact-verification",
 		"verifiedFactIDs",
 		"reviewFacts.every",
+		"查看原文依据",
+		"fact-quote-toggle",
 	} {
 		if !strings.Contains(script, contract) {
 			t.Errorf("fact review does not enforce individual verification contract %q", contract)
@@ -459,7 +464,7 @@ func TestApprovedUIRequiresStructuredInsightVerification(t *testing.T) {
 	for _, contract := range []string{
 		`id="insights-check"`,
 		`data-testid="insight-review"`,
-		"我已核对症状画像、安全提示和准备建议",
+		"画像与准备建议已核对",
 	} {
 		if !strings.Contains(page, contract) {
 			t.Errorf("structured insight review UI is missing %q", contract)
@@ -516,7 +521,7 @@ func TestAgentUIHasDedicatedEmergencyTerminalState(t *testing.T) {
 	script := servedBody(t, handler, "/assets/app.js")
 	styles := servedBody(t, handler, "/assets/styles.css")
 
-	for _, contract := range []string{`id="emergency-panel"`, `id="emergency-message"`, `id="emergency-export-button"`} {
+	for _, contract := range []string{`id="emergency-panel"`, `id="emergency-message"`, `id="emergency-export-button"`, `id="emergency-call-button"`, `id="emergency-evidence"`, "立即拨打当地急救 / 120"} {
 		if !strings.Contains(page, contract) {
 			t.Errorf("emergency UI is missing %q", contract)
 		}
@@ -633,7 +638,7 @@ func TestApprovedUIOffersInlineRecoveryForFailedAgentRuns(t *testing.T) {
 	page := servedBody(t, handler, "/")
 	scripts := servedBody(t, handler, "/assets/session-state.js") + "\n" + servedBody(t, handler, "/assets/app.js")
 
-	for _, marker := range []string{`id="failed-panel"`, `id="retry-run-button"`, "本次内容已保留"} {
+	for _, marker := range []string{`id="failed-panel"`, `id="retry-run-button"`, `class="failed-head"`, "本次内容已保留"} {
 		if !strings.Contains(page, marker) {
 			t.Fatalf("page missing recovery marker %q", marker)
 		}
@@ -650,8 +655,8 @@ func TestFailedAndWorkingStatesKeepAUsableComposer(t *testing.T) {
 	for _, contract := range []string{
 		"function composerModeForSession(session)",
 		`case "failed":`,
-		`return session.failure?.retryable ? "failed" : "initial"`,
-		`ui.inputForm.hidden = mode !== "initial" && mode !== "failed"`,
+		`return "hidden"`,
+		`ui.inputForm.hidden = mode !== "initial"`,
 		"renderComposerMode(composerModeForSession(currentSession))",
 		"renderComposerMode(composerModeForSession(session))",
 	} {

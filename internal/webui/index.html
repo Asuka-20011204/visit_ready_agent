@@ -7,18 +7,18 @@
   <meta name="theme-color" content="#f3f8f5">
   <title>诊前序 · VisitReady Agent</title>
   <link rel="icon" href="/assets/shield-check.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/styles.css?v=20260910x">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260910ew">
   <script src="/assets/review.js?v=20260905b" defer></script>
   <script src="/assets/session-state.js?v=20260910n" defer></script>
   <script src="/assets/network.js?v=20260908g" defer></script>
-  <script src="/assets/app.js?v=20260910x" defer></script>
+  <script src="/assets/app.js?v=20260910bc" defer></script>
 </head>
 <body data-mode="{{.Mode}}">
   <a class="skip-link" href="#conversation">跳到对话</a>
   <div class="app-shell" data-testid="visit-ready-workspace">
     <aside class="history-rail" aria-label="往期会话">
       <div class="brand-row">
-        <a class="brand" href="/" aria-label="诊前序首页"><span class="brand-mark"><img src="/assets/shield-check.svg" alt=""></span><span><strong>诊前序</strong><small>VISITREADY</small></span></a>
+        <a class="brand" href="/" aria-label="诊前序首页"><span class="brand-mark"><img src="/assets/shield-check.svg" alt=""></span><span><strong>诊前序</strong><small>诊前准备</small></span></a>
         <button class="rail-toggle" id="rail-toggle" type="button" aria-label="收起往期会话" aria-expanded="true">‹</button>
       </div>
       <button class="new-thread-button" id="new-conversation-button" type="button" aria-label="新建诊前准备" title="新建诊前准备"><span aria-hidden="true">＋</span><span class="new-thread-label">新建<span class="new-thread-full">诊前准备</span></span></button>
@@ -42,71 +42,101 @@
         <div class="conversation-thread" id="conversation-thread" role="log" aria-live="polite" aria-relevant="additions text" data-testid="conversation-thread">
           <section class="welcome-view" id="empty-state">
             <div class="welcome-intro">
-              <div class="welcome-symbol" aria-hidden="true"><span></span><span></span><span></span></div>
-              <p class="eyebrow">一次安静、可核对的整理</p>
               <h2>这次就诊，最想让医生了解什么？</h2>
-              <p class="welcome-copy">用一两段话说清症状、时间和已有资料。Agent 会整理可核对的诊前摘要，只追问当前最有价值的信息。</p>
-              <aside class="emergency-note"><strong>紧急情况</strong><span>如出现严重呼吸困难、意识异常等情况，请立即联系当地急救服务。</span></aside>
+              <p class="welcome-copy">先写下这次最想让医生知道的情况。只整理你提供的信息，不做诊断。</p>
+              <ol class="welcome-steps" aria-label="使用步骤">
+                <li><strong>描述</strong> 症状与资料</li>
+                <li><strong>核对</strong> 确认事实</li>
+                <li><strong>带走</strong> 诊前清单</li>
+              </ol>
+              <p class="welcome-steps-compact" aria-label="使用步骤">描述 <span>症状与资料</span> · 核对 <span>确认事实</span> · 带走 <span>诊前清单</span></p>
             </div>
-            <div class="welcome-cluster">
-            <ol class="welcome-steps" aria-label="使用步骤">
-              <li><strong>描述</strong><span>症状、时间、已有资料</span></li>
-              <li><strong>核对</strong><span>确认提取事实</span></li>
-              <li><strong>带走</strong><span>导出诊前清单</span></li>
-            </ol>
             <div class="prompt-paths">
               <p class="prompt-paths-label">可以从这里开始</p>
               <div class="suggestion-grid" aria-label="输入建议">
-                <button type="button" class="suggestion" data-prompt="主要症状与开始时间："><span>01</span><strong>从症状开始</strong><small>发生了什么，何时开始</small></button>
-                <button type="button" class="suggestion" data-prompt="症状的变化与影响："><span>02</span><strong>补充变化</strong><small>什么情况下更明显</small></button>
-                <button type="button" class="suggestion" data-prompt="检查、用药与过敏情况："><span>03</span><strong>列出现有资料</strong><small>检查、药物与过敏</small></button>
+                <button type="button" class="suggestion" data-prompt="主要症状与开始时间：" aria-describedby="path-hint"><strong>从症状开始</strong></button>
+                <p class="path-hint" id="path-hint">发生了什么，何时开始，已有检查或用药</p>
               </div>
             </div>
-            </div>
+            <aside class="emergency-note"><strong>紧急情况</strong><span>如出现严重呼吸困难、意识异常等情况，请立即联系当地急救服务。</span></aside>
           </section>
 
-          <article class="turn user-turn" id="initial-user-turn" data-role="user" hidden><div class="turn-avatar" aria-hidden="true">你</div><div class="turn-body"><p class="turn-author">你的描述</p><p id="initial-user-message"></p></div></article>
-          <article class="turn assistant-turn working-turn" id="working-state" data-role="assistant" aria-live="polite" hidden><div class="turn-avatar agent-avatar" aria-hidden="true"><img src="/assets/sparkles.svg" alt=""></div><div class="turn-body"><p class="turn-author">VisitReady Agent</p><div class="thinking-line"><span></span><span></span><span></span><strong id="working-status">请求已发送，等待 AI 生成结果</strong></div><div class="working-meta"><span id="working-elapsed">已等待 0 秒</span><span>完整结果到达后会一次显示</span></div><button class="cancel-run-button" id="cancel-run-button" type="button">停止等待</button></div></article>
+          <article class="turn user-turn" id="initial-user-turn" data-role="user" hidden><div class="turn-avatar" aria-hidden="true">你</div><div class="turn-body"><p class="turn-author">提交原文</p><p id="initial-user-message"></p></div></article>
+          <article class="turn assistant-turn working-turn" id="working-state" data-role="assistant" aria-live="polite" hidden><div class="turn-avatar agent-avatar" aria-hidden="true"><img src="/assets/clipboard-check.svg" alt=""></div><div class="turn-body"><p class="turn-author">VisitReady Agent</p><div class="thinking-line"><span></span><span></span><span></span><strong id="working-status">正在整理这次就诊信息</strong></div><div class="working-progress" role="progressbar" aria-label="正在整理"></div><div class="working-meta"><span id="working-elapsed">正在生成可核对结果</span><span>完成后会进入核对</span></div><div class="working-skeleton" aria-hidden="true"><div class="skeleton-block"><span>事实</span><i></i><i></i></div><div class="skeleton-block"><span>目标</span><i></i></div><div class="skeleton-block"><span>问题</span><i></i><i></i></div></div><button class="cancel-run-button" id="cancel-run-button" type="button">停止等待</button></div></article>
 
           <div class="form-error" id="session-error" role="alert" tabindex="-1" hidden></div><div class="form-error" id="recovery-error" role="alert" tabindex="-1" hidden></div>
-          <div class="recovery-notice" id="recovery-notice" role="status" hidden><span aria-hidden="true">↗</span><p><strong>已恢复这个临时会话</strong><small>浏览器只保存匿名会话编号；页面会显示核对所需的原文证据片段。</small></p></div>
+          <div class="recovery-notice" id="recovery-notice" role="status" hidden><p><strong>已恢复这个临时会话</strong><small>浏览器只保存匿名会话编号；页面会显示核对所需的原文证据片段。</small></p></div>
           <div id="expired-state" class="expired-state" tabindex="-1" hidden><span class="state-icon" aria-hidden="true">⌛</span><h2>这次临时会话已清除</h2><p>为保护隐私，服务器不会继续保留这份内容。</p><button class="secondary-button" id="expired-reset-button" type="button">开始新会话</button></div>
 
           <div id="session-view" data-testid="session-panel" hidden>
-            <article class="turn assistant-turn" data-role="assistant"><div class="turn-avatar agent-avatar" aria-hidden="true"><img src="/assets/sparkles.svg" alt=""></div><div class="turn-body assistant-response"><p class="turn-author">VisitReady Agent</p><p class="response-lead" id="assistant-lead">我已完成第一轮整理。先看看处理记录，再核对结果。</p><details class="run-record" data-testid="run-record"><summary><span><i class="run-state-dot"></i>处理记录</span><small id="run-summary">等待结果</small></summary><ol class="agent-events" id="agent-events" data-testid="event-timeline"></ol></details></div></article>
+            <article class="turn assistant-turn" data-role="assistant"><div class="turn-avatar agent-avatar" aria-hidden="true"><img src="/assets/clipboard-check.svg" alt=""></div><div class="turn-body assistant-response"><p class="turn-author">VisitReady Agent</p><p class="response-lead" id="assistant-lead">我已完成第一轮整理。先看看处理记录，再核对结果。</p><details class="run-record" data-testid="run-record"><summary><span><i class="run-state-dot"></i>处理记录</span><small id="run-summary">等待结果</small></summary><ol class="agent-events" id="agent-events" data-testid="event-timeline"></ol></details></div></article>
 
             <article class="turn assistant-turn emergency-turn" id="emergency-panel" data-role="assistant" role="alert" tabindex="-1" hidden><div class="turn-avatar emergency-avatar" aria-hidden="true">!</div><div class="turn-body emergency-terminal">
-              <p class="turn-author">VisitReady Agent · 紧急安全处理</p>
+              <p class="turn-author">紧急安全处理</p>
               <p class="emergency-kicker">请停止继续填写</p>
-              <h2>当前信息需要立即由急救或急诊处理</h2>
-              <p id="emergency-message">这些表现正在发生或明显加重，请立即联系当地急救服务或前往急诊。</p>
-              <p class="emergency-boundary">这不是诊断。不要为了继续使用本工具而延迟寻求紧急帮助。</p>
-              <a id="emergency-export-button" class="emergency-export-button" href="#" download="visit-ready-emergency.md"><img src="/assets/download.svg" alt="">下载紧急安全摘要</a>
+              <div class="emergency-head">
+                <div>
+                  <h2>当前信息需要立即由急救或急诊处理</h2>
+                  <p id="emergency-message">这些表现正在发生或明显加重，请立即联系当地急救服务或前往急诊。</p>
+                  <p class="emergency-boundary">这不是诊断。不要为了继续使用本工具而延迟寻求紧急帮助。</p>
+                  <blockquote class="emergency-evidence" id="emergency-evidence" hidden></blockquote>
+                </div>
+                <div class="emergency-actions">
+                  <a id="emergency-call-button" class="emergency-call-button" href="tel:120">立即拨打当地急救 / 120</a>
+                  <a id="emergency-export-button" class="emergency-export-button" href="#" download="visit-ready-emergency.md"><img src="/assets/download.svg" alt="">下载紧急安全摘要</a>
+                </div>
+              </div>
             </div></article>
 
             <article class="turn assistant-turn failed-turn" id="failed-panel" data-role="assistant" role="alert" tabindex="-1" hidden><div class="turn-avatar failed-avatar" aria-hidden="true">!</div><div class="turn-body failed-terminal">
-              <p class="turn-author">VisitReady Agent · 可恢复中断</p>
-              <h2>这次处理没有完成</h2>
-              <p id="failed-message">本次内容已保留，可以从中断处重新尝试，无需再次填写。</p>
-              <p class="failed-detail" id="failed-detail"></p>
-              <button class="primary-button" id="retry-run-button" type="button"><span aria-hidden="true">↻</span><span>重新尝试</span></button>
+              <p class="turn-author">处理已中断</p>
+              <div class="failed-head">
+                <div>
+                  <h2>这次处理没有完成</h2>
+                  <p id="failed-message">本次内容已保留，可以从中断处重新尝试，无需再次填写。</p>
+                  <p class="failed-detail" id="failed-detail"></p>
+                  <blockquote class="failed-evidence" id="failed-evidence" hidden></blockquote>
+                </div>
+                <button class="primary-button retry-run-button" id="retry-run-button" type="button"><span aria-hidden="true">↻</span><span>重新尝试</span></button>
+              </div>
             </div></article>
 
-            <article class="turn assistant-turn clarification-turn" id="clarification-panel" data-role="assistant" hidden><div class="turn-avatar agent-avatar" aria-hidden="true"><img src="/assets/sparkles.svg" alt=""></div><div class="turn-body"><p class="turn-author">VisitReady Agent</p><h2>我已经抓住重点，再确认最有价值的信息</h2><p class="clarification-progress" id="clarification-progress"></p><ol id="clarification-questions" class="clarification-questions"></ol></div></article>
-            <article class="turn user-turn" id="clarification-user-turn" data-role="user" hidden><div class="turn-avatar" aria-hidden="true">你</div><div class="turn-body"><p class="turn-author">你的补充</p><p id="clarification-user-message"></p></div></article>
+            <article class="turn assistant-turn clarification-turn" id="clarification-panel" data-role="assistant" hidden><div class="turn-avatar agent-avatar" aria-hidden="true"><img src="/assets/clipboard-check.svg" alt=""></div><div class="turn-body"><p class="turn-author">VisitReady Agent</p><h2>再确认最有价值的信息</h2><p class="clarification-progress" id="clarification-progress"></p><ol id="clarification-questions" class="clarification-questions"></ol></div></article>
+            <article class="turn user-turn" id="clarification-user-turn" data-role="user" hidden><div class="turn-avatar" aria-hidden="true">你</div><div class="turn-body"><p class="turn-author">补充原文</p><p id="clarification-user-message"></p></div></article>
 
+            <article class="turn assistant-turn completed-turn" id="completed-panel" data-role="assistant" tabindex="-1" hidden>
+              <div class="turn-avatar completed-avatar" aria-hidden="true"><img src="/assets/check.svg" alt=""></div>
+              <div class="turn-body completed-workspace">
+                <p class="turn-author">VisitReady Agent</p>
+                <div class="completed-head">
+                  <div>
+                    <h2>诊前清单已经准备好</h2>
+                    <p>下载后即可带走就诊准备，以及与医生重点沟通的内容。</p>
+                    <p class="download-meta" id="export-meta"></p>
+                  </div>
+                  <a id="export-button" class="download-button" href="#" download="visit-ready.md"><img src="/assets/download.svg" alt="">下载诊前清单</a>
+                </div>
+                <div class="completed-pack" id="completed-pack"></div>
+              </div>
+            </article>
             <article class="turn assistant-turn review-turn" id="review-panel" data-role="assistant" hidden><div class="turn-avatar agent-avatar" aria-hidden="true"><img src="/assets/clipboard-check.svg" alt=""></div><div class="turn-body">
-              <div class="artifact-head"><div><p class="turn-author">VisitReady Agent · 诊前摘要</p><h2>请逐项核对后生成最终版</h2></div><span class="review-badge" id="review-badge">等待确认</span></div>
-              <fieldset class="fact-review" id="fact-review" data-testid="fact-review"><legend>已提取事实</legend><div class="review-progress"><span id="fact-count">0 项</span><strong id="review-progress">已核对 0 / 0</strong></div><p class="review-instruction">检查事实与原文依据，确认准确后逐项勾选。</p><div id="facts-list" class="facts-list"></div></fieldset>
+              <div class="artifact-head"><div><p class="turn-author">VisitReady Agent · 诊前摘要</p><h2>核对提取事实</h2></div><div class="review-progress"><span id="fact-count">0 项</span><strong id="review-progress">已核对 0 / 0</strong><span class="review-hint">逐项勾选确认</span></div><span class="review-badge" id="review-badge">等待确认</span></div>
+              <fieldset class="fact-review" id="fact-review" data-testid="fact-review"><legend>已提取事实</legend><p class="review-instruction">检查事实与原文依据，确认准确后逐项勾选。</p><div id="facts-list" class="facts-list"></div></fieldset>
+              <section class="intelligence-section risk-section" id="risk-section" aria-labelledby="risk-title" data-testid="risk-signals" hidden>
+                <div class="subsection-heading"><h3 id="risk-title">安全优先项</h3><span>仅依据你明确描述的表现</span></div><div id="risk-signals" class="risk-signals"></div>
+              </section>
+              <div class="goal-field"><label for="visit-goal">本次就诊目标</label><input id="visit-goal" class="goal-input" maxlength="240" aria-describedby="goal-help" placeholder="本次最希望医生帮助解决的问题"><p id="goal-help">可以修改为你最希望本次就诊解决的问题。</p></div>
+              <div class="completed-pack">
+              <section class="artifact-section" id="next-actions-section" aria-labelledby="next-actions-title" data-testid="next-actions" hidden><div class="subsection-heading"><h3 id="next-actions-title">下一步准备</h3><span>就诊前可执行</span></div><ol id="next-actions" class="next-actions"></ol></section>
+              <section class="artifact-section" aria-labelledby="questions-title"><div class="subsection-heading"><h3 id="questions-title">与医生重点沟通</h3><span>已按优先级整理</span></div><ol id="questions-list" class="questions-list"></ol></section>
+              </div>
+              <details class="review-appendix">
+                <summary>查看理解、画像与就诊准备</summary>
               <section class="interview-overview" aria-labelledby="conversation-summary-title">
                 <div class="interview-meter"><span id="interview-meter-bar"></span></div>
                 <div class="interview-metrics"><strong id="conversation-summary-title">Agent 对这次沟通的理解</strong><span id="interview-metrics"></span></div>
                 <p id="conversation-summary" class="conversation-summary"></p>
                 <ul id="summary-confirmed" class="summary-confirmed"></ul>
-              </section>
-              <div class="goal-field"><label for="visit-goal">本次就诊目标</label><input id="visit-goal" class="goal-input" maxlength="240" aria-describedby="goal-help"><p id="goal-help">可以修改为你最希望本次就诊解决的问题。</p></div>
-              <section class="intelligence-section risk-section" id="risk-section" aria-labelledby="risk-title" data-testid="risk-signals" hidden>
-                <div class="subsection-heading"><h3 id="risk-title">安全优先项</h3><span>仅依据你明确描述的表现</span></div><div id="risk-signals" class="risk-signals"></div>
               </section>
               <div class="intelligence-grid">
                 <section class="intelligence-section" id="symptom-profiles-section" aria-labelledby="symptom-profiles-title" data-testid="symptom-profiles" hidden>
@@ -126,21 +156,18 @@
                 <div class="subsection-heading"><h3 id="contradiction-title">发现不同说法</h3><span>两段原话都会保留</span></div><div id="contradiction-list" class="contradiction-list"></div>
               </section>
               
-              <section class="artifact-section" id="next-actions-section" aria-labelledby="next-actions-title" data-testid="next-actions" hidden><div class="subsection-heading"><h3 id="next-actions-title">下一步准备</h3><span>就诊前可执行</span></div><ol id="next-actions" class="next-actions"></ol></section>
-              <section class="artifact-section" aria-labelledby="questions-title"><div class="subsection-heading"><h3 id="questions-title">与医生重点沟通</h3><span>已按优先级整理</span></div><ol id="questions-list" class="questions-list"></ol></section>
               <section class="artifact-section" id="sources-section" aria-labelledby="sources-title" hidden><div class="subsection-heading"><h3 id="sources-title">可信参考资料</h3><span>与个人事实分开</span></div><div id="sources-list" class="sources-list"></div></section>
-              <fieldset class="insight-review" data-testid="insight-review"><legend>结构化分析核对</legend><label for="insights-check"><input id="insights-check" type="checkbox"><span><strong>我已核对症状画像、安全提示和准备建议</strong><small>这些内容与我提供的信息一致；未知项仍需在就诊时补充。</small></span></label></fieldset>
-              
+              </details>
             </div></article>
 
-            <article class="turn assistant-turn completed-turn" id="completed-panel" data-role="assistant" tabindex="-1" hidden><div class="turn-avatar completed-avatar" aria-hidden="true"><img src="/assets/check.svg" alt=""></div><div class="turn-body"><p class="turn-author">VisitReady Agent</p><h2>诊前清单已经准备好</h2><p>最终文件只包含本次确认后的结构化信息，请在临时会话到期前下载。</p><a id="export-button" class="download-button" href="#" download="visit-ready.md"><img src="/assets/download.svg" alt="">下载 Markdown</a></div></article>
           </div>
         </div>
       </section>
 
       <div class="composer-dock" data-testid="input-panel">
         <div class="review-actions" id="review-actions" hidden>
-          <button class="primary-button" id="confirm-button" type="button" disabled><img src="/assets/check.svg" alt=""><span>完成核对，生成最终版</span></button>
+          <fieldset class="insight-review" data-testid="insight-review"><legend class="sr-only">结构化分析核对</legend><label for="insights-check"><input id="insights-check" type="checkbox"><span><strong>画像与准备建议已核对</strong><small>这些内容与我提供的信息一致</small></span></label></fieldset>
+          <button class="primary-button" id="confirm-button" type="button" disabled><span>完成核对</span></button>
           <button class="text-button" id="find-unreviewed-button" type="button">定位未核对项</button>
         </div>
 
@@ -148,9 +175,9 @@
           <span class="context-item"><i aria-hidden="true"></i>本机服务内保留 {{.Retention}}</span>
           <span class="composer-state" id="composer-state">等待你的描述</span>
         </div>
-        <form class="composer" id="input-form" data-testid="composer" novalidate><label class="sr-only" for="health-input">输入健康描述</label><textarea id="health-input" name="health-description" maxlength="6000" rows="1" aria-describedby="composer-help char-count input-error privacy-notice" placeholder="描述这次需要整理的健康情况…"></textarea><div class="composer-inline-error" id="input-error" role="alert" tabindex="-1" hidden></div><div class="composer-tools"><div class="composer-options"><span class="privacy-notice" id="privacy-notice">身份信息会在发送前自动拦截</span><label class="compact-check"><input id="search-toggle" type="checkbox"><span>可信资料检索</span></label></div><div class="composer-submit"><span id="char-count">0 / 6000</span><button class="send-button" id="start-button" type="submit" aria-label="发送并开始整理"><span>开始整理</span></button></div></div><p class="composer-help" id="composer-help">Enter 发送 · Shift + Enter 换行 · 联网检索可能增加等待时间</p></form>
-        <form class="composer clarification-composer" id="clarification-form" hidden novalidate><label class="sr-only" for="clarification-input">补充回答</label><textarea id="clarification-input" maxlength="2000" rows="1" aria-describedby="clarification-help clarification-count session-error" placeholder="回答重点问题，也可以直接补充其他相关信息…"></textarea><div class="composer-tools"><span id="clarification-help">每轮只问 1–3 个重点；不确定可以如实说明</span><div class="composer-submit"><button class="add-context-button" id="add-context-button" type="button">补充其他信息</button><span id="clarification-count">0 / 2000</span><button class="send-button" id="clarify-button" type="submit" aria-label="提交补充"><span>提交</span></button></div></div></form>
-        <p class="legal-line">VisitReady 仅整理你提供的信息，不做诊断，也不替代专业诊疗。</p>
+        <form class="composer" id="input-form" data-testid="composer" novalidate><label class="sr-only" for="health-input">输入健康描述</label><textarea id="health-input" name="health-description" maxlength="6000" rows="1" aria-describedby="composer-help char-count input-error privacy-notice" placeholder="先写症状、时间和已有资料…"></textarea><div class="composer-inline-error" id="input-error" role="alert" tabindex="-1" hidden></div><div class="composer-tools"><div class="composer-options"><span class="privacy-notice" id="privacy-notice">身份信息会在发送前自动拦截</span><label class="compact-check"><input id="search-toggle" type="checkbox"><span>可信资料检索</span></label></div><div class="composer-submit"><span id="char-count">0 / 6000</span><button class="send-button" id="start-button" type="submit" aria-label="发送并开始整理"><span>开始整理</span></button></div></div><p class="composer-help" id="composer-help">Enter 发送 · Shift + Enter 换行 · 联网检索可能增加等待时间</p></form>
+        <form class="composer clarification-composer" id="clarification-form" hidden novalidate><label class="sr-only" for="clarification-input">补充回答</label><textarea id="clarification-input" maxlength="2000" rows="1" aria-describedby="clarification-help clarification-count session-error" placeholder="回答重点问题，也可以直接补充其他相关信息…"></textarea><div class="composer-tools"><span id="clarification-help">只追问当前最有价值的信息。每轮只问 1–3 个重点；不确定可以如实说明</span><div class="composer-submit"><button class="add-context-button" id="add-context-button" type="button">补充其他信息</button><span id="clarification-count">0 / 2000</span><button class="send-button" id="clarify-button" type="submit" aria-label="提交补充"><span>提交</span></button></div></div></form>
+        <p class="legal-line">诊前序仅整理你提供的信息，不做诊断，也不替代专业诊疗。</p>
       </div>
     </main>
   </div>
@@ -175,19 +202,22 @@
   </dialog>
   <dialog class="account-dialog" id="account-dialog" aria-labelledby="account-title" aria-describedby="account-copy">
     <form class="dialog-body" id="account-form" novalidate>
-      <p class="dialog-kicker">账户</p>
-      <h2 id="account-title">登录后继续这次整理</h2>
-      <p id="account-copy">只用于保存和恢复会话，不用于诊断。不要填写病历、身份证号或健康描述。</p>
+      <p class="dialog-kicker">诊前序</p>
+      <h2 id="account-title">登录后可在其他设备找回会话</h2>
+      <p id="account-copy">只保存会话，不用于诊断。登录后可在其他设备继续未完成的诊前准备。</p>
+      <div class="account-fields">
       <label for="account-email-input">邮箱</label>
-      <input id="account-email-input" type="email" autocomplete="email" maxlength="320" required placeholder="name@example.com">
+      <input id="account-email-input" type="email" autocomplete="email" maxlength="320" required placeholder="用于恢复会话">
       <label for="account-password-input">密码</label>
       <input id="account-password-input" type="password" autocomplete="current-password" minlength="12" maxlength="128" required placeholder="至少 12 位">
+      </div>
       <p class="account-error" id="account-error" role="alert" hidden></p>
-      <div class="dialog-actions"><button class="text-button" id="account-mode-button" type="button">创建账户</button><button class="primary-button" id="account-submit-button" type="submit">登录</button></div>
+      <button class="primary-button" id="account-submit-button" type="submit">登录</button>
+      <button class="secondary-button" id="account-mode-button" type="button">创建账户</button>
     </form>
   </dialog>
   <dialog class="account-menu-dialog" id="account-menu-dialog" aria-labelledby="account-menu-title">
-    <div class="dialog-body"><p class="dialog-kicker">当前账户</p><h2 id="account-menu-title">账户与会话</h2><p id="account-menu-email"></p><div class="dialog-actions"><button class="danger-button" id="account-logout-button" type="button">退出登录</button><button class="text-button" id="account-menu-close-button" type="button">关闭</button></div></div>
+    <div class="dialog-body"><p class="dialog-kicker">当前账户</p><h2 id="account-menu-title">账户与会话</h2><p id="account-menu-email"></p><div class="dialog-actions"><button class="secondary-button" id="account-restore-button" type="button">跨设备恢复</button><button class="danger-button" id="account-logout-button" type="button">退出登录</button><button class="text-button" id="account-menu-close-button" type="button">关闭</button></div></div>
   </dialog>
 </body>
 </html>
