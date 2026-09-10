@@ -261,6 +261,8 @@ type Session struct {
 	TraumaHistory          []string            `json:"trauma_history,omitempty"`
 	SafetyNotes            []string            `json:"safety_notes,omitempty"`
 	DeniedConditions       []string            `json:"denied_conditions,omitempty"`
+	Measurements           []string            `json:"measurements,omitempty"`
+	Tests                  []string            `json:"tests,omitempty"`
 	ConversationSummary    ConversationSummary `json:"conversation_summary,omitempty"`
 	InterviewState         InterviewState      `json:"interview_state,omitempty"`
 	Failure                *RunFailure         `json:"failure,omitempty"`

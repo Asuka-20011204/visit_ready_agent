@@ -105,6 +105,26 @@ func TestMarkdownDoesNotDuplicateConversationSummaryPunctuation(t *testing.T) {
 	}
 }
 
+func TestMarkdownRendersClarificationGlobals(t *testing.T) {
+	data, err := exporter.Markdown(domain.Session{
+		Status:      domain.StatusCompleted,
+		VisitGoal:   "整理心悸相关情况并向医生说明",
+		Medications: []string{"在用布洛芬"},
+		Allergies:   []string{"青霉素"},
+		DeniedConditions: []string{"否认既往疾病：没有糖尿病"},
+		Measurements: []string{"体温38度"},
+	})
+	if err != nil {
+		t.Fatalf("Markdown() error = %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{"用药、过敏与既往情况", "在用布洛芬", "青霉素", "否认既往疾病：没有糖尿病", "体温38度"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in export:\n%s", want, text)
+		}
+	}
+}
+
 func TestMarkdownCollapsesEvidenceWhenContentIsTheSourceQuote(t *testing.T) {
 	session := domain.Session{
 		Status:    domain.StatusCompleted,

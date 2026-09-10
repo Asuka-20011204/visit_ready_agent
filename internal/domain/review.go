@@ -79,10 +79,18 @@ func ReviewDigest(session Session) string {
 	writeReviewValue(&canonical, "contradictions")
 	writeReviewValue(&canonical, strconv.Itoa(len(session.Contradictions)))
 	for _, item := range session.Contradictions {
-		for _, value := range []string{item.Topic, item.FirstEvidence, item.SecondEvidence, item.ClarifyingQuestion, string(item.Priority)} {
+		for _, value := range []string{item.Topic, item.FirstEvidence, item.SecondEvidence, item.ClarifyingQuestion, item.Resolution, string(item.Priority)} {
 			writeReviewValue(&canonical, value)
 		}
 	}
+	writeReviewStrings(&canonical, "medications", session.Medications)
+	writeReviewStrings(&canonical, "allergies", session.Allergies)
+	writeReviewStrings(&canonical, "chronic_conditions", session.ChronicConditions)
+	writeReviewStrings(&canonical, "trauma_history", session.TraumaHistory)
+	writeReviewStrings(&canonical, "safety_notes", session.SafetyNotes)
+	writeReviewStrings(&canonical, "denied_conditions", session.DeniedConditions)
+	writeReviewStrings(&canonical, "measurements", session.Measurements)
+	writeReviewStrings(&canonical, "tests", session.Tests)
 	for _, value := range []string{session.ConversationSummary.Headline, session.ConversationSummary.Intent} {
 		writeReviewValue(&canonical, value)
 	}

@@ -980,12 +980,12 @@ func TestRunnerLabelsSkippedClarificationAsUncertain(t *testing.T) {
 	}
 	foundSkipped := false
 	for _, item := range session.Uncertainties {
-		if item.Status == "skipped" && strings.Contains(item.Topic, "duration") {
+		if item.Status == "skipped" && strings.Contains(item.Topic, "持续多久") {
 			foundSkipped = true
 		}
 	}
 	if !foundSkipped {
-		t.Fatalf("uncertainty did not retain skipped duration topic: %#v", session.Uncertainties)
+		t.Fatalf("uncertainty did not retain skipped question topic: %#v", session.Uncertainties)
 	}
 	if len(session.Facts) != 1 {
 		t.Fatalf("skip answer became a clinical fact: %#v", session.Facts)

@@ -32,6 +32,7 @@ func Markdown(session domain.Session) ([]byte, error) {
 	writeRiskSignals(&output, session.RiskSignals)
 	writeSymptomProfiles(&output, session.SymptomProfiles)
 	writeTimeline(&output, session.Timeline)
+	writeGlobalHistory(&output, session)
 	writeActionItems(&output, session.ActionItems)
 	writeOpenInformation(&output, session.Uncertainties, session.Contradictions)
 
@@ -123,7 +124,11 @@ func writeOpenInformation(output *strings.Builder, uncertainties []domain.Uncert
 	}
 	for _, item := range contradictions {
 		fmt.Fprintf(output, "- **%s存在不同说法**：%s / %s\n", cleanText(item.Topic), cleanText(item.FirstEvidence), cleanText(item.SecondEvidence))
-		fmt.Fprintf(output, "  - 待确认：%s\n", cleanText(item.ClarifyingQuestion))
+		if item.Resolution != "" {
+			fmt.Fprintf(output, "  - 你的选择：%s\n", cleanText(item.Resolution))
+		} else {
+			fmt.Fprintf(output, "  - 待确认：%s\n", cleanText(item.ClarifyingQuestion))
+		}
 	}
 	output.WriteString("\n")
 }
@@ -176,6 +181,45 @@ func writeSymptomProfiles(output *strings.Builder, profiles []domain.SymptomProf
 	output.WriteString("\n")
 }
 
+// writeGlobalHistory surfaces medication, allergy, history, measurement, test
+// and explicit denials the user provided during clarification, so they are not
+// written but never shown.
+func writeGlobalHistory(output *strings.Builder, session domain.Session) {
+	sections := []struct {
+		title  string
+		values []string
+	}{
+		{"用药", session.Medications},
+		{"过敏", session.Allergies},
+		{"既往疾病", session.ChronicConditions},
+		{"外伤或手术", session.TraumaHistory},
+		{"测量数值", session.Measurements},
+		{"检查情况", session.Tests},
+		{"安全相关", session.SafetyNotes},
+		{"已否认的情况", session.DeniedConditions},
+	}
+	any := false
+	for _, section := range sections {
+		if len(section.values) > 0 {
+			any = true
+			break
+		}
+	}
+	if !any {
+		return
+	}
+	output.WriteString("## 用药、过敏与既往情况\n\n")
+	for _, section := range sections {
+		if len(section.values) == 0 {
+			continue
+		}
+		output.WriteString("- **" + section.title + "**：")
+		output.WriteString(cleanText(strings.Join(section.values, "；")))
+		output.WriteString("\n")
+	}
+	output.WriteString("\n")
+}
+
 func writeTimeline(output *strings.Builder, timeline []domain.TimelineEvent) {
 	if len(timeline) == 0 {
 		return
@@ -206,7 +250,7 @@ func uniqueFacts(facts []domain.Fact) []domain.Fact {
 	result := make([]domain.Fact, 0, len(facts))
 	seen := make(map[string]struct{}, len(facts))
 	for _, fact := range facts {
-		key := strings.ToLower(strings.Join(strings.Fields(fact.Category+"\x1f"+fact.SourceQuote), " "))
+		key := strings.ToLower(strings.Join(strings.Fields(fact.Content+"\x1f"+fact.SourceQuote), " "))
 		if _, exists := seen[key]; exists {
 			continue
 		}

@@ -350,6 +350,8 @@ func cloneSession(source domain.Session) domain.Session {
 	cloned.TraumaHistory = append([]string(nil), source.TraumaHistory...)
 	cloned.SafetyNotes = append([]string(nil), source.SafetyNotes...)
 	cloned.DeniedConditions = append([]string(nil), source.DeniedConditions...)
+	cloned.Measurements = append([]string(nil), source.Measurements...)
+	cloned.Tests = append([]string(nil), source.Tests...)
 	cloned.ConversationSummary = source.ConversationSummary
 	cloned.ConversationSummary.Confirmed = append([]string(nil), source.ConversationSummary.Confirmed...)
 	cloned.ConversationSummary.OpenThreads = append([]string(nil), source.ConversationSummary.OpenThreads...)

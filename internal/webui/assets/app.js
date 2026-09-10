@@ -45,6 +45,7 @@ const ui = {
   riskSection: document.querySelector("#risk-section"), riskSignals: document.querySelector("#risk-signals"),
   profilesSection: document.querySelector("#symptom-profiles-section"), profiles: document.querySelector("#symptom-profiles"),
   timelineSection: document.querySelector("#clinical-timeline-section"), timeline: document.querySelector("#clinical-timeline"),
+  globalHistorySection: document.querySelector("#global-history-section"), globalHistory: document.querySelector("#global-history"),
   missingSection: document.querySelector("#missing-section"), missingContext: document.querySelector("#missing-context"),
   nextActionsSection: document.querySelector("#next-actions-section"), nextActions: document.querySelector("#next-actions"),
   questions: document.querySelector("#questions-list"),
@@ -407,6 +408,7 @@ function renderSession(session, options = {}) {
     renderRiskSignals(session.risk_signals || []);
     renderSymptomProfiles(session.symptom_profiles || []);
     renderClinicalTimeline(session.timeline || []);
+    renderGlobalHistory(session);
     renderMissingContext(session.missing_fields || []);
     renderConversationSummary(session.conversation_summary || {}, session.interview_state || {});
     renderUncertainties(session.uncertainties || []);
@@ -683,6 +685,20 @@ function renderClinicalTimeline(timeline) {
     item.append(time, text);
     return item;
   }));
+}
+function renderGlobalHistory(session) {
+  const groups = [
+    ["用药", session.medications],
+    ["过敏", session.allergies],
+    ["既往疾病", session.chronic_conditions],
+    ["外伤或手术", session.trauma_history],
+    ["测量数值", session.measurements],
+    ["检查情况", session.tests],
+    ["安全相关", session.safety_notes],
+    ["已否认的情况", session.denied_conditions]
+  ].filter(([, values]) => Array.isArray(values) && values.length);
+  ui.globalHistorySection.hidden = groups.length === 0;
+  ui.globalHistory.replaceChildren(...groups.map(([label, values]) => detailPair(label, values.join("、"))));
 }
 function renderMissingContext(fields) {
   ui.missingSection.hidden = fields.length === 0;

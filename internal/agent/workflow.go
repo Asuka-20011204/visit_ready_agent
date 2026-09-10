@@ -283,6 +283,10 @@ func clarificationPromptForMissingField(field, category string, session domain.S
 		return domain.Question{Text: "对哪些药物、食物或环境因素过敏？", Reason: "补全仍未确认的过敏信息", Priority: priority, Category: "allergy"}
 	case "history":
 		return domain.Question{Text: "既往有哪些需要向医生说明的疾病、手术或外伤？", Reason: "补全仍未确认的既往情况", Priority: priority, Category: "history"}
+	case "measurement":
+		return domain.Question{Text: "测量过哪些项目，具体数值是多少？", Reason: "补全仍未确认的测量数值", Priority: priority, Category: "measurement"}
+	case "test":
+		return domain.Question{Text: "做过哪些检查，结果如何？", Reason: "补全仍未确认的检查情况", Priority: priority, Category: "test"}
 	case "safety":
 		return domain.Question{Text: missingFieldQuestionText(field, "安全相关"), Reason: "补全仍未确认的安全相关信息", Priority: priority, Category: "safety"}
 	}
@@ -314,7 +318,7 @@ func missingFieldSlot(field, category string) string {
 		return "severity"
 	case "associated":
 		return "associated"
-	case "medication", "allergy", "history", "safety", "other":
+	case "medication", "allergy", "history", "safety", "measurement", "test", "other":
 		return ""
 	default:
 		return profileSlotForMissingField(field)
@@ -792,6 +796,10 @@ func clarificationSlotSpecFor(category string) (clarificationSlotSpec, bool) {
 		return clarificationSlotSpec{global: "allergies"}, true
 	case "history":
 		return clarificationSlotSpec{global: "history"}, true
+	case "measurement":
+		return clarificationSlotSpec{global: "measurements"}, true
+	case "test":
+		return clarificationSlotSpec{global: "tests"}, true
 	case "safety":
 		return clarificationSlotSpec{global: "safety"}, true
 	default:
@@ -1078,6 +1086,10 @@ func mergeClarificationGlobals(session domain.Session, turns []domain.Clarificat
 				next.Medications = appendUniqueStrings(next.Medications, []string{positive})
 			case "allergies":
 				next.Allergies = appendUniqueStrings(next.Allergies, []string{positive})
+			case "measurements":
+				next.Measurements = appendUniqueStrings(next.Measurements, []string{positive})
+			case "tests":
+				next.Tests = appendUniqueStrings(next.Tests, []string{positive})
 			case "history":
 				for _, clause := range positiveClauses {
 					clause = clipRunes(clause, 160)
@@ -1129,6 +1141,10 @@ func globalSlotLabel(global string) string {
 		return "过敏"
 	case "history":
 		return "既往疾病"
+	case "measurements":
+		return "测量"
+	case "tests":
+		return "检查"
 	case "safety":
 		return "安全相关"
 	default:
@@ -1187,6 +1203,10 @@ func missingFieldCovered(field, category string, profiles []domain.SymptomProfil
 			return len(session.ChronicConditions) > 0 || len(session.TraumaHistory) > 0 || deniedLabelPresent(session, "既往疾病")
 		case "safety":
 			return len(session.SafetyNotes) > 0 || deniedLabelPresent(session, "安全相关")
+		case "measurement":
+			return len(session.Measurements) > 0 || deniedLabelPresent(session, "测量")
+		case "test":
+			return len(session.Tests) > 0 || deniedLabelPresent(session, "检查")
 		default:
 			return globalFieldCovered(field, session)
 		}
@@ -1391,7 +1411,7 @@ func mergeTimeline(prior, current []domain.TimelineEvent) []domain.TimelineEvent
 	result := make([]domain.TimelineEvent, 0, len(merged))
 	seen := make(map[string]struct{}, len(merged))
 	for _, event := range merged {
-		key := normalizeFactEvidence(event.SourceQuote)
+		key := normalizeFactEvidence(event.TimeLabel + "\x1f" + event.Event + "\x1f" + event.SourceQuote)
 		if key == "" {
 			continue
 		}
@@ -1411,7 +1431,7 @@ func deduplicateFacts(facts []domain.Fact) []domain.Fact {
 		if isClarificationControlAnswer(fact.SourceQuote) {
 			continue
 		}
-		key := normalizeFactEvidence(fact.SourceQuote)
+		key := normalizeFactEvidence(fact.Content + "\x1f" + fact.SourceQuote)
 		if _, exists := seen[key]; exists {
 			continue
 		}

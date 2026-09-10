@@ -615,7 +615,7 @@ func validQuestionCategory(category string) bool {
 func validMissingFieldCategory(category string) bool {
 	switch category {
 	case "", "other", "onset", "duration", "frequency", "severity", "pattern", "trigger",
-		"associated", "medication", "allergy", "history", "safety":
+		"associated", "medication", "allergy", "history", "safety", "measurement", "test":
 		return true
 	default:
 		return false

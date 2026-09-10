@@ -20,14 +20,22 @@ var (
 )
 
 func deriveConversationSignals(session domain.Session) (domain.ConversationSummary, []domain.Uncertainty, []domain.Contradiction) {
+	categoryByField := make(map[string]string, len(session.MissingFieldItems))
+	for _, item := range session.MissingFieldItems {
+		categoryByField[normalizeFactEvidence(item.Field)] = item.Category
+	}
 	uncertainties := make([]domain.Uncertainty, 0, len(session.MissingFields)+3)
 	for _, field := range session.MissingFields {
 		field = strings.TrimSpace(field)
 		if field == "" {
 			continue
 		}
+		detail := "目前没有足够的原文信息"
+		if category := categoryByField[normalizeFactEvidence(field)]; category == "" || category == "other" {
+			detail = "暂未归入具体栏目，就诊时可人工补充"
+		}
 		uncertainties = append(uncertainties, domain.Uncertainty{
-			Topic: field, Detail: "目前没有足够的原文信息", Why: uncertaintyWhy(field),
+			Topic: field, Detail: detail, Why: uncertaintyWhy(field),
 			Status: "unknown", Priority: uncertaintyPriority(field),
 		})
 	}
@@ -43,7 +51,7 @@ func deriveConversationSignals(session domain.Session) (domain.ConversationSumma
 				continue
 			}
 			uncertainties = append(uncertainties, domain.Uncertainty{
-				Topic: question.Category, Detail: question.Text, Why: "你选择暂不提供，已保留为就诊时可补充项",
+				Topic: question.Text, Detail: "暂不提供", Why: "你选择暂不提供，已保留为就诊时可补充项",
 				Status: "skipped", Priority: question.Priority,
 			})
 		}

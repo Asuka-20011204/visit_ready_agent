@@ -185,6 +185,27 @@ func TestGlobalSlotsCapturePositiveAnswers(t *testing.T) {
 	}
 }
 
+func TestMeasurementAndTestSlotsRecordAnswers(t *testing.T) {
+	session := domain.Session{}
+	turns := []domain.ClarificationTurn{
+		{Questions: []domain.Question{{Text: "测量过哪些项目，具体数值是多少？", Category: "measurement"}}, Answer: "体温38度，血压正常"},
+		{Questions: []domain.Question{{Text: "做过哪些检查，结果如何？", Category: "test"}}, Answer: "做过血常规，结果正常"},
+	}
+	merged := mergeClarificationGlobals(session, turns)
+	if len(merged.Measurements) != 1 || !strings.Contains(merged.Measurements[0], "体温38度") {
+		t.Fatalf("measurements = %#v", merged.Measurements)
+	}
+	if len(merged.Tests) != 1 || !strings.Contains(merged.Tests[0], "血常规") {
+		t.Fatalf("tests = %#v", merged.Tests)
+	}
+	if !missingFieldCovered("体温情况", "measurement", nil, merged) {
+		t.Fatalf("measurement field should be covered")
+	}
+	if !missingFieldCovered("检查结果", "test", nil, merged) {
+		t.Fatalf("test field should be covered")
+	}
+}
+
 // Coverage must follow the category, not keywords in the field text.
 func TestMissingFieldCoveredUsesCategoryNotKeywords(t *testing.T) {
 	session := domain.Session{Medications: []string{"在用布洛芬"}}
