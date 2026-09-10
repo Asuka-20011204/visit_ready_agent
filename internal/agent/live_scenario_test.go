@@ -73,7 +73,70 @@ func TestLiveStomachPainScenario(t *testing.T) {
 	}
 }
 
-// TestLiveProfileExtractionAcrossCases checks whether symptom profiles are
+// TestLiveVariedScenarios drives several different symptom domains through the
+// real LLM to check the fixes generalize beyond the stomach-pain case.
+func TestLiveVariedScenarios(t *testing.T) {
+	endpoint := os.Getenv("LLM_ENDPOINT")
+	key := os.Getenv("LLM_API_KEY")
+	model := os.Getenv("LLM_MODEL")
+	if endpoint == "" || key == "" || model == "" {
+		t.Skip("LLM_ENDPOINT/LLM_API_KEY/LLM_MODEL not set")
+	}
+	client, err := llm.NewOpenAICompatibleClient(endpoint, key, model, &http.Client{Timeout: 60 * time.Second}, nil)
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	runner, err := agent.NewRunner(agent.Config{LLM: client, SessionTTL: time.Hour, Now: time.Now})
+	if err != nil {
+		t.Fatalf("runner: %v", err)
+	}
+
+	scenarios := []struct {
+		name    string
+		initial string
+		answer  string
+	}{
+		{
+			"respiratory", "最近一个星期咳嗽越来越厉害，尤其是晚上，这两天还开始发烧，最高到了38度5。",
+			"吃了退烧药布洛芬，烧退了一点但还是咳。对青霉素不过敏。以前得过肺炎。",
+		},
+		{
+			"cardiac_negation", "有时候胸口发闷，喘气有点费劲，但是休息几分钟就能缓过来。",
+			"没有胸痛，也没有晕过去，就是闷。晚上睡觉不受影响。",
+		},
+		{
+			"allergy_history", "我对青霉素过敏，以前得过甲亢，现在每天吃优甲乐。",
+			"甲亢是五年前确诊的，一直在吃药控制。",
+		},
+		{
+			"headache", "右边太阳穴这一块总是胀痛，最近一个月每周要疼两三次。",
+			"疼起来大概持续两三个小时，睡觉不受影响，没有恶心呕吐。",
+		},
+	}
+
+	for _, scenario := range scenarios {
+		first := startWithRetry(t, runner, scenario.initial)
+		last := first
+		if first.Status == domain.StatusWaitingClarification {
+			second, err := runner.Resume(context.Background(), first, scenario.answer)
+			if err != nil {
+				t.Fatalf("%s Resume: %v", scenario.name, err)
+			}
+			last = second
+		}
+		if last.Failure != nil {
+			t.Fatalf("%s failure: %s %q", scenario.name, last.Failure.Code, last.Failure.Message)
+		}
+		names := make([]string, 0, len(last.SymptomProfiles))
+		for _, p := range last.SymptomProfiles {
+			names = append(names, p.Name)
+		}
+		t.Logf("%s: status=%s profiles=%v meds=%d allergies=%d history=%d trauma=%d denied=%d",
+			scenario.name, last.Status, names, len(last.Medications), len(last.Allergies),
+			len(last.ChronicConditions), len(last.TraumaHistory), len(last.DeniedConditions))
+	}
+}
+
 // extracted for inputs that DO contain a compact, verbatim symptom word, to
 // tell a specific phrasing gap apart from a broader profile-extraction failure.
 func TestLiveProfileExtractionAcrossCases(t *testing.T) {
