@@ -62,6 +62,9 @@ func TestLiveStomachPainScenario(t *testing.T) {
 	}
 	t.Logf("round2: status=%s facts=%d profiles=%d medications=%d history=%d denied=%d",
 		second.Status, len(second.Facts), len(second.SymptomProfiles), len(second.Medications), len(second.ChronicConditions), len(second.DeniedConditions))
+	for _, fact := range second.Facts {
+		t.Logf("  fact[%s] content=%q quote=%q", fact.Category, fact.Content, fact.SourceQuote)
+	}
 	if second.Failure != nil {
 		t.Fatalf("round2 failure: code=%s message=%q", second.Failure.Code, second.Failure.Message)
 	}

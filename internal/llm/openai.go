@@ -250,6 +250,43 @@ func sanitizeOptionalExtraction(input string, result domain.Extraction) domain.E
 	if len(result.SearchQueries) > 2 {
 		result.SearchQueries = result.SearchQueries[:2]
 	}
+	result.Medications = sanitizeGlobals(input, result.Medications, 20)
+	result.Allergies = sanitizeGlobals(input, result.Allergies, 20)
+	result.ChronicConditions = sanitizeGlobals(input, result.ChronicConditions, 20)
+	result.TraumaHistory = sanitizeGlobals(input, result.TraumaHistory, 20)
+	result.DeniedConditions = sanitizeGlobals(input, result.DeniedConditions, 30)
+	result.Measurements = sanitizeGlobals(input, result.Measurements, 20)
+	result.Tests = sanitizeGlobals(input, result.Tests, 20)
+	return result
+}
+
+// sanitizeGlobals keeps only global entries whose source_quote is verbatim in
+// the input, normalizes the value to the quote when it is not grounded, and
+// deduplicates and caps the list.
+func sanitizeGlobals(input string, items []domain.ExtractedGlobal, max int) []domain.ExtractedGlobal {
+	result := make([]domain.ExtractedGlobal, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		quote := strings.TrimSpace(item.SourceQuote)
+		if quote == "" || !groundedQuote(input, quote) {
+			continue
+		}
+		value := strings.TrimSpace(item.Value)
+		if value == "" || !groundedValue(quote, value) {
+			value = quote
+		}
+		key := strings.Join(strings.Fields(item.Category+"\x1f"+value), " ")
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		item.Value = value
+		item.SourceQuote = quote
+		result = append(result, item)
+		if len(result) == max {
+			break
+		}
+	}
 	return result
 }
 

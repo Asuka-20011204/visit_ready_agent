@@ -97,6 +97,7 @@ func (r *Runner) extractNode(ctx context.Context, state workflowState) (workflow
 	next.Session.RiskSignals = append([]domain.RiskSignal(nil), extraction.RiskSignals...)
 	next.Session.MissingFieldItems = append([]domain.MissingField(nil), extraction.MissingFieldItems...)
 	next.Session.MissingFields = missingFieldLabels(next.Session.MissingFieldItems, extraction.MissingFields)
+	next.Session = applyGlobals(next.Session, extraction)
 	next.Session.ClarificationQuestions = append([]string(nil), extraction.ClarificationQuestions...)
 	next.Session.ClarificationPrompts = append([]domain.Question(nil), extraction.ClarificationPrompts...)
 	next.Session.Uncertainties = append([]domain.Uncertainty(nil), extraction.Uncertainties...)
@@ -125,7 +126,6 @@ func (r *Runner) extractionValidatorNode(_ context.Context, state workflowState)
 	next.Session.Facts = mergeGroundedFacts(next.priorFacts, validated.Facts)
 	next.Session.SymptomProfiles = mergeSymptomProfiles(next.priorProfiles, validated.SymptomProfiles, latestTurnCorrectedSlots(next.Session.ClarificationTurns))
 	next.Session.SymptomProfiles = mergeClarificationSlots(next.Session.SymptomProfiles, next.Session.ClarificationTurns)
-	next.Session = mergeClarificationGlobals(next.Session, next.Session.ClarificationTurns)
 	next.Session.Timeline = mergeTimeline(next.priorTimeline, validated.Timeline)
 	if mergedItems := mergeMissingFieldItems(next.priorMissingItems, validated.MissingFieldItems); len(mergedItems) > 0 {
 		next.Session.MissingFieldItems = reconcileMissingFieldItems(mergedItems, next.Session.SymptomProfiles, next.Session)
@@ -1036,82 +1036,46 @@ func profileFieldValue(profile domain.SymptomProfile, field string) string {
 	}
 }
 
-// mergeClarificationGlobals writes answers for medication / allergy / history /
-// safety questions into explicit session slots. Denials are recorded so a
-// covered field can be told apart from one that was never answered.
-func mergeClarificationGlobals(session domain.Session, turns []domain.ClarificationTurn) domain.Session {
-	next := session
-	for _, turn := range turns {
-		for _, question := range turn.Questions {
-			spec, ok := clarificationSlotSpecFor(question.Category)
-			if !ok || spec.global == "" {
-				continue
-			}
-			answer := strings.TrimSpace(turn.Answer)
-			if answer == "" || isSkipAnswer(answer) || isUncertainAnswer(answer) {
-				continue
-			}
-			if spec.global == "safety" {
-				denialClauses, positiveClauses := partitionGlobalAnswer(answer)
-				for _, clause := range denialClauses {
-					next.DeniedConditions = appendUniqueStrings(next.DeniedConditions, []string{"否认安全相关：" + clipRunes(clause, 160)})
-				}
-				for _, clause := range positiveClauses {
-					clause = clipRunes(clause, 160)
-					if len([]rune(clause)) >= 2 {
-						next.SafetyNotes = appendUniqueStrings(next.SafetyNotes, []string{clause})
-					}
-				}
-				continue
-			}
-			label := globalSlotLabel(spec.global)
-			denialClauses, positiveClauses := partitionGlobalAnswer(answer)
-			if len(positiveClauses) == 0 {
-				if len(denialClauses) > 0 {
-					next.DeniedConditions = appendUniqueStrings(next.DeniedConditions, []string{"否认" + label + "：" + clipRunes(answer, 160)})
-				}
-				continue
-			}
-			for _, clause := range denialClauses {
-				next.DeniedConditions = appendUniqueStrings(next.DeniedConditions, []string{"否认" + label + "：" + clipRunes(clause, 160)})
-			}
-			positive := clipRunes(strings.Join(positiveClauses, "，"), 200)
-			switch spec.global {
-			case "medications":
-				next.Medications = appendUniqueStrings(next.Medications, []string{positive})
-			case "allergies":
-				next.Allergies = appendUniqueStrings(next.Allergies, []string{positive})
-			case "measurements":
-				next.Measurements = appendUniqueStrings(next.Measurements, []string{positive})
-			case "tests":
-				next.Tests = appendUniqueStrings(next.Tests, []string{positive})
-			case "history":
-				for _, clause := range positiveClauses {
-					clause = clipRunes(clause, 160)
-					if !hasAny(clause, "病", "炎", "手术", "外伤", "骨折", "摔伤", "扭伤", "史", "菌", "感染", "瘤", "慢性") {
-						continue
-					}
-					if hasAny(clause, "外伤", "骨折", "手术", "摔伤", "扭伤") {
-						next.TraumaHistory = appendUniqueStrings(next.TraumaHistory, []string{clause})
-					} else {
-						next.ChronicConditions = appendUniqueStrings(next.ChronicConditions, []string{clause})
-					}
-				}
-			}
-		}
+// applyGlobals unions the model's structured medication / allergy / history /
+// test entries into the session slots. The model emits these from the full
+// context (initial input plus every clarification answer), so the previous
+// keyword parsing of free text is no longer needed.
+func applyGlobals(session domain.Session, extraction domain.Extraction) domain.Session {
+	session.Medications = appendUniqueStrings(session.Medications, globalValues(extraction.Medications))
+	session.Allergies = appendUniqueStrings(session.Allergies, globalValues(extraction.Allergies))
+	session.ChronicConditions = appendUniqueStrings(session.ChronicConditions, globalValues(extraction.ChronicConditions))
+	session.TraumaHistory = appendUniqueStrings(session.TraumaHistory, globalValues(extraction.TraumaHistory))
+	session.Measurements = appendUniqueStrings(session.Measurements, globalValues(extraction.Measurements))
+	session.Tests = appendUniqueStrings(session.Tests, globalValues(extraction.Tests))
+	for _, denied := range extraction.DeniedConditions {
+		session.DeniedConditions = appendUniqueStrings(session.DeniedConditions, []string{"否认" + denialLabel(denied.Category) + "：" + denied.Value})
 	}
-	return next
+	return session
 }
 
-func partitionGlobalAnswer(answer string) (denied, positive []string) {
-	for _, clause := range splitAnswerClauses(answer) {
-		if clauseDenies(clause) {
-			denied = append(denied, clause)
-			continue
+func globalValues(items []domain.ExtractedGlobal) []string {
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		if value := strings.TrimSpace(item.Value); value != "" {
+			values = append(values, value)
 		}
-		positive = append(positive, clause)
 	}
-	return denied, positive
+	return values
+}
+
+func denialLabel(category string) string {
+	switch category {
+	case "medication":
+		return "用药"
+	case "allergy":
+		return "过敏"
+	case "history":
+		return "既往疾病"
+	case "safety":
+		return "安全相关"
+	default:
+		return "既往情况"
+	}
 }
 
 // symptomCoveredByExisting avoids duplicating an extracted symptom with a
@@ -1129,25 +1093,6 @@ func symptomCoveredByExisting(existing []string, value string) bool {
 		}
 	}
 	return false
-}
-
-func globalSlotLabel(global string) string {
-	switch global {
-	case "medications":
-		return "用药"
-	case "allergies":
-		return "过敏"
-	case "history":
-		return "既往疾病"
-	case "measurements":
-		return "测量"
-	case "tests":
-		return "检查"
-	case "safety":
-		return "安全相关"
-	default:
-		return "既往情况"
-	}
 }
 
 func clauseDenies(clause string) bool {

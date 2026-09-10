@@ -121,12 +121,27 @@ func (m *MissingField) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ExtractedGlobal is one structured medication / allergy / history / test
+// entry extracted by the model, with its verbatim evidence.
+type ExtractedGlobal struct {
+	Value       string `json:"value"`
+	SourceQuote string `json:"source_quote"`
+	Category    string `json:"category,omitempty"` // used for denials: medication/allergy/history/safety
+}
+
 type Extraction struct {
 	VisitGoal              string              `json:"visit_goal"`
 	Facts                  []Fact              `json:"facts"`
 	SymptomProfiles        []SymptomProfile    `json:"symptom_profiles,omitempty"`
 	Timeline               []TimelineEvent     `json:"timeline,omitempty"`
 	RiskSignals            []RiskSignal        `json:"risk_signals,omitempty"`
+	Medications            []ExtractedGlobal   `json:"medications,omitempty"`
+	Allergies              []ExtractedGlobal   `json:"allergies,omitempty"`
+	ChronicConditions      []ExtractedGlobal   `json:"chronic_conditions,omitempty"`
+	TraumaHistory          []ExtractedGlobal   `json:"trauma_history,omitempty"`
+	DeniedConditions       []ExtractedGlobal   `json:"denied_conditions,omitempty"`
+	Measurements           []ExtractedGlobal   `json:"measurements,omitempty"`
+	Tests                  []ExtractedGlobal   `json:"tests,omitempty"`
 	MissingFields          []string            `json:"-"`
 	MissingFieldItems      []MissingField      `json:"missing_fields"`
 	ClarificationQuestions []string            `json:"clarification_questions"`

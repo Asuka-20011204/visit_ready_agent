@@ -147,53 +147,57 @@ func TestTypedProfileValueBlanksMismatchedSlots(t *testing.T) {
 	}
 }
 
-func TestGlobalSlotsRecordAnswersAndDenials(t *testing.T) {
+func TestGlobalsRecordDenialsFromExtraction(t *testing.T) {
 	session := domain.Session{}
-	turns := []domain.ClarificationTurn{
-		{Questions: []domain.Question{{Text: "目前是否使用止痛药、外用药？", Category: "medication"}}, Answer: "没有，目前没在吃药"},
-		{Questions: []domain.Question{{Text: "是否有糖尿病、甲状腺或关节炎等病史？", Category: "history"}}, Answer: "没有糖尿病，也没有甲状腺疾病"},
-		{Questions: []domain.Question{{Text: "对药物过敏吗？", Category: "allergy"}}, Answer: "没有已知过敏"},
+	extraction := domain.Extraction{
+		DeniedConditions: []domain.ExtractedGlobal{
+			{Value: "没有糖尿病", Category: "history", SourceQuote: "没有糖尿病"},
+			{Value: "没在吃药", Category: "medication", SourceQuote: "没在吃药"},
+			{Value: "没有已知过敏", Category: "allergy", SourceQuote: "没有已知过敏"},
+		},
 	}
-	merged := mergeClarificationGlobals(session, turns)
+	merged := applyGlobals(session, extraction)
 	if len(merged.Medications) != 0 {
 		t.Fatalf("medications should stay empty for denial, got %#v", merged.Medications)
 	}
-	if len(merged.DeniedConditions) < 3 {
-		t.Fatalf("denials = %#v, want medication/history/allergy entries", merged.DeniedConditions)
+	if len(merged.DeniedConditions) != 3 {
+		t.Fatalf("denials = %#v, want 3 entries", merged.DeniedConditions)
 	}
-	fields := []string{"是否使用止痛药、外用药", "既往糖尿病/甲状腺/关节炎/外伤史", "是否有药物过敏史"}
-	for _, field := range fields {
-		if !missingFieldCovered(field, "", nil, merged) {
-			t.Fatalf("field %q should be covered by denials", field)
-		}
+	if !missingFieldCovered("是否使用止痛药、外用药", "medication", nil, merged) {
+		t.Fatalf("medication field should be covered by denial")
+	}
+	if !missingFieldCovered("是否有药物过敏史", "allergy", nil, merged) {
+		t.Fatalf("allergy field should be covered by denial")
+	}
+	if !missingFieldCovered("既往糖尿病/甲状腺/关节炎/外伤史", "history", nil, merged) {
+		t.Fatalf("history field should be covered by denial")
 	}
 }
 
-func TestGlobalSlotsCapturePositiveAnswers(t *testing.T) {
+func TestGlobalsCapturePositiveMedication(t *testing.T) {
 	session := domain.Session{}
-	turns := []domain.ClarificationTurn{{
-		Questions: []domain.Question{{Text: "目前是否在用药？", Category: "medication"}},
-		Answer:    "在用布洛芬，一天两次",
-	}}
-	merged := mergeClarificationGlobals(session, turns)
+	extraction := domain.Extraction{
+		Medications: []domain.ExtractedGlobal{{Value: "在用布洛芬", SourceQuote: "在用布洛芬"}},
+	}
+	merged := applyGlobals(session, extraction)
 	if len(merged.Medications) != 1 || !strings.Contains(merged.Medications[0], "布洛芬") {
 		t.Fatalf("medications = %#v", merged.Medications)
 	}
 	if len(merged.DeniedConditions) != 0 {
 		t.Fatalf("denials = %#v, want none", merged.DeniedConditions)
 	}
-	if !missingFieldCovered("是否使用止痛药、外用药", "", nil, merged) {
+	if !missingFieldCovered("是否使用止痛药、外用药", "medication", nil, merged) {
 		t.Fatalf("medication field should be covered")
 	}
 }
 
-func TestMeasurementAndTestSlotsRecordAnswers(t *testing.T) {
+func TestGlobalsCaptureMeasurementsAndTests(t *testing.T) {
 	session := domain.Session{}
-	turns := []domain.ClarificationTurn{
-		{Questions: []domain.Question{{Text: "测量过哪些项目，具体数值是多少？", Category: "measurement"}}, Answer: "体温38度，血压正常"},
-		{Questions: []domain.Question{{Text: "做过哪些检查，结果如何？", Category: "test"}}, Answer: "做过血常规，结果正常"},
+	extraction := domain.Extraction{
+		Measurements: []domain.ExtractedGlobal{{Value: "体温38度", SourceQuote: "体温38度"}},
+		Tests:        []domain.ExtractedGlobal{{Value: "血常规", SourceQuote: "做过血常规"}},
 	}
-	merged := mergeClarificationGlobals(session, turns)
+	merged := applyGlobals(session, extraction)
 	if len(merged.Measurements) != 1 || !strings.Contains(merged.Measurements[0], "体温38度") {
 		t.Fatalf("measurements = %#v", merged.Measurements)
 	}
