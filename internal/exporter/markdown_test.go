@@ -107,12 +107,12 @@ func TestMarkdownDoesNotDuplicateConversationSummaryPunctuation(t *testing.T) {
 
 func TestMarkdownRendersClarificationGlobals(t *testing.T) {
 	data, err := exporter.Markdown(domain.Session{
-		Status:      domain.StatusCompleted,
-		VisitGoal:   "整理心悸相关情况并向医生说明",
-		Medications: []string{"在用布洛芬"},
-		Allergies:   []string{"青霉素"},
+		Status:           domain.StatusCompleted,
+		VisitGoal:        "整理心悸相关情况并向医生说明",
+		Medications:      []string{"在用布洛芬"},
+		Allergies:        []string{"青霉素"},
 		DeniedConditions: []string{"否认既往疾病：没有糖尿病"},
-		Measurements: []string{"体温38度"},
+		Measurements:     []string{"体温38度"},
 	})
 	if err != nil {
 		t.Fatalf("Markdown() error = %v", err)

@@ -644,7 +644,7 @@ func TestRunnerCarriesStructuredIntelligenceIntoReviewAndQuestions(t *testing.T)
 			Timeline: []domain.TimelineEvent{{
 				TimeLabel: "昨天", Event: "出现心悸", SourceQuote: "最近有心悸",
 			}},
-			RiskSignals:   []domain.RiskSignal{{Priority: domain.PriorityUrgent, Title: "无原文", Evidence: "呼吸困难", Guidance: "不应展示", SourceQuote: "呼吸困难"}},
+			RiskSignals: []domain.RiskSignal{{Priority: domain.PriorityUrgent, Title: "无原文", Evidence: "呼吸困难", Guidance: "不应展示", SourceQuote: "呼吸困难"}},
 		}},
 		questions: domain.QuestionSet{
 			Questions: []domain.Question{

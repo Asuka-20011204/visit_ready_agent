@@ -1759,13 +1759,13 @@ func (r *Runner) addEvent(session domain.Session, step, status, message string) 
 
 func cloneWorkflowState(source workflowState) workflowState {
 	return workflowState{
-		Session:       cloneSession(source.Session),
-		SearchQueries: append([]string(nil), source.SearchQueries...),
-		priorFacts:    append([]domain.Fact(nil), source.priorFacts...),
-		priorProfiles: cloneSymptomProfiles(source.priorProfiles),
-		priorTimeline: append([]domain.TimelineEvent(nil), source.priorTimeline...),
-		priorMissing:  append([]string(nil), source.priorMissing...),
+		Session:           cloneSession(source.Session),
+		SearchQueries:     append([]string(nil), source.SearchQueries...),
+		priorFacts:        append([]domain.Fact(nil), source.priorFacts...),
+		priorProfiles:     cloneSymptomProfiles(source.priorProfiles),
+		priorTimeline:     append([]domain.TimelineEvent(nil), source.priorTimeline...),
+		priorMissing:      append([]string(nil), source.priorMissing...),
 		priorMissingItems: append([]domain.MissingField(nil), source.priorMissingItems...),
-		priorGoal:     source.priorGoal,
+		priorGoal:         source.priorGoal,
 	}
 }
