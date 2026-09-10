@@ -124,6 +124,7 @@ func (r *Runner) extractionValidatorNode(_ context.Context, state workflowState)
 		return workflowState{}, fmt.Errorf("all %d extracted facts failed evidence validation", rejected)
 	}
 	next.Session.Facts = mergeGroundedFacts(next.priorFacts, validated.Facts)
+	next.Session = deriveGlobalsFromFacts(next.Session, next.Session.Facts)
 	next.Session.SymptomProfiles = mergeSymptomProfiles(next.priorProfiles, validated.SymptomProfiles, latestTurnCorrectedSlots(next.Session.ClarificationTurns))
 	next.Session.SymptomProfiles = mergeClarificationSlots(next.Session.SymptomProfiles, next.Session.ClarificationTurns)
 	next.Session.Timeline = mergeTimeline(next.priorTimeline, validated.Timeline)
@@ -1076,6 +1077,59 @@ func denialLabel(category string) string {
 	default:
 		return "既往情况"
 	}
+}
+
+// deriveGlobalsFromFacts unions the medication / allergy / history / test facts
+// into the session slots, splitting explicit denials from positive entries. This
+// is a deterministic complement to the model's structured global output, so the
+// slots stay populated even when the model only expresses these as facts.
+func deriveGlobalsFromFacts(session domain.Session, facts []domain.Fact) domain.Session {
+	for _, fact := range facts {
+		content := strings.TrimSpace(fact.Content)
+		if content == "" {
+			continue
+		}
+		switch fact.Category {
+		case "medication":
+			if isDenialFact(content) {
+				session.DeniedConditions = appendUniqueStrings(session.DeniedConditions, []string{"否认用药：" + content})
+			} else {
+				session.Medications = appendUniqueStrings(session.Medications, []string{content})
+			}
+		case "allergy":
+			if isDenialFact(content) {
+				session.DeniedConditions = appendUniqueStrings(session.DeniedConditions, []string{"否认过敏：" + content})
+			} else {
+				session.Allergies = appendUniqueStrings(session.Allergies, []string{content})
+			}
+		case "history":
+			if isDenialFact(content) {
+				session.DeniedConditions = appendUniqueStrings(session.DeniedConditions, []string{"否认既往疾病：" + content})
+			} else if hasAny(content, "外伤", "骨折", "手术", "摔伤", "扭伤") {
+				session.TraumaHistory = appendUniqueStrings(session.TraumaHistory, []string{content})
+			} else {
+				session.ChronicConditions = appendUniqueStrings(session.ChronicConditions, []string{content})
+			}
+		case "test":
+			if isDenialFact(content) {
+				session.DeniedConditions = appendUniqueStrings(session.DeniedConditions, []string{"否认检查：" + content})
+			} else {
+				session.Tests = appendUniqueStrings(session.Tests, []string{content})
+			}
+		}
+	}
+	return session
+}
+
+// isDenialFact classifies a fact by its leading clause, so "就是前几年查出
+// 幽门螺杆菌，没再复查" is a positive history entry (its negation is only a
+// trailing note) while "以前没有胃病" is a denial.
+func isDenialFact(content string) bool {
+	first := strings.TrimSpace(content)
+	if index := strings.IndexAny(first, "，,。；;"); index >= 0 {
+		first = first[:index]
+	}
+	return clauseDenies(strings.TrimSpace(first))
 }
 
 // symptomCoveredByExisting avoids duplicating an extracted symptom with a

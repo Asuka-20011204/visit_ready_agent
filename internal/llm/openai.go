@@ -24,7 +24,7 @@ import (
 
 const (
 	maxCompletionBytes  = 1 << 20
-	extractionMaxTokens = 1400
+	extractionMaxTokens = 3000
 	questionsMaxTokens  = 1000
 )
 

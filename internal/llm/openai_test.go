@@ -67,8 +67,8 @@ func TestOpenAICompatibleClientExtractsStructuredFacts(t *testing.T) {
 	if captured.Stream {
 		t.Fatal("stream = true, want explicit non-streaming response")
 	}
-	if captured.MaxTokens != 1400 {
-		t.Fatalf("max_tokens = %d, want 1400 for extraction", captured.MaxTokens)
+	if captured.MaxTokens != 3000 {
+		t.Fatalf("max_tokens = %d, want 3000 for extraction", captured.MaxTokens)
 	}
 	if captured.Thinking.Type != "disabled" {
 		t.Fatalf("thinking.type = %q, want disabled for structured extraction", captured.Thinking.Type)
