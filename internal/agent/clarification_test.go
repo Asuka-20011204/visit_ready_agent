@@ -130,10 +130,12 @@ func TestTypedProfileValueBlanksMismatchedSlots(t *testing.T) {
 	}{
 		{"十分钟", clarificationDurationValuePattern, "十分钟"},
 		{"三周", clarificationDurationValuePattern, ""},
+		{"半天", clarificationDurationValuePattern, "半天"},
 		{"一周四五次", frequencyValidationPattern, "一周四五次"},
-		{"偶尔", frequencyValidationPattern, ""},
+		{"偶尔", frequencyValidationPattern, "偶尔"},
 		{"三周前", onsetValidationPattern, "三周前"},
 		{"近一周", onsetValidationPattern, "近一周"},
+		{"上个月开始的", onsetValidationPattern, "上个月"},
 		{"最近几天更明显", onsetValidationPattern, "最近几天"},
 		{"一天两三次", onsetValidationPattern, ""},
 	}

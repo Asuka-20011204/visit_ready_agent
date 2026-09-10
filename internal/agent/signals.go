@@ -8,15 +8,20 @@ import (
 )
 
 var (
-	durationValuePattern              = regexp.MustCompile(`(?:每次\s*(?:约|大约|大概)?|(?:约|大约|大概)?\s*持续)\s*[一二两三四五六七八九十半\d]+\s*(?:(?:到|至|-|~)\s*[一二两三四五六七八九十半\d]+\s*)?(?:秒钟?|分钟?|小时)`)
-	clarificationDurationValuePattern = regexp.MustCompile(`(?:每次)?\s*(?:约|大约|大概)?\s*(?:持续)?\s*[一二两三四五六七八九十半\d]+\s*(?:(?:到|至|-|~)\s*[一二两三四五六七八九十半\d]+\s*)?(?:秒钟?|分钟?|小时)`)
+	durationValuePattern = regexp.MustCompile(`(?:每次\s*(?:约|大约|大概)?|(?:约|大约|大概)?\s*持续)\s*[一二两三四五六七八九十半\d]+\s*(?:(?:到|至|-|~)\s*[一二两三四五六七八九十半\d]+\s*)?(?:秒钟?|分钟?|小时)`)
+
+	// The validation patterns below are the single source of truth for the
+	// temporal slots' canonical vocabulary. The extraction prompt and the trust
+	// boundary share them, so a value is either recognized in canonical form or
+	// left empty — the boundary never guesses a slot from an arbitrary sentence.
+	clarificationDurationValuePattern = regexp.MustCompile(`(?:每次)?\s*(?:约|大约|大概)?\s*(?:持续)?\s*[一二两三四五六七八九十半\d]+\s*(?:(?:到|至|-|~)\s*[一二两三四五六七八九十半\d]+\s*)?(?:秒钟?|分钟?|小时)|半天|一会儿|一阵子|很久|整天|整晚|大半天`)
 	frequencyValuePattern             = regexp.MustCompile(`(?:每天|每晚|每周|一周|一天)[一二两三四五六七八九十半\d]+次`)
-	frequencyValidationPattern        = regexp.MustCompile(`(?:每天|每晚|每周|一周|一天|每星期)\s*(?:约|大约|大概|差不多)?\s*[一二两三四五六七八九十半\d]+\s*(?:次|回)`)
+	frequencyValidationPattern        = regexp.MustCompile(`(?:每天|每晚|每周|一周|一天|每星期)\s*(?:约|大约|大概|差不多)?\s*[一二两三四五六七八九十半几\d]+\s*(?:次|回)|偶尔|时不时|经常|频繁|很少|不常`)
 	onsetValuePattern                 = regexp.MustCompile(`(?:今天|昨天|前天|(?:近|最近)?[一二两三四五六七八九十\d]+(?:天|周|个月|月|年)(?:前|来))`)
-	// onsetValidationPattern also accepts "近一周"/"最近几天" without a
-	// trailing 前/来, but only when the 近/最近 prefix is present, so a bare
-	// "一天" inside a frequency answer cannot leak into the onset slot.
-	onsetValidationPattern = regexp.MustCompile(`(?:今天|昨天|前天|(?:近|最近)[一二两三四五六七八九十半几\d]+(?:天|周|个月|月|年)(?:前|来)?|(?:近|最近)?[一二两三四五六七八九十半几\d]+(?:天|周|个月|月|年)(?:前|来))`)
+	// onsetValidationPattern accepts "近一周"/"最近几天" without a trailing
+	// 前/来 (only with the 近/最近 prefix) and relative markers such as 上个月,
+	// so a bare "一天" inside a frequency answer still cannot leak into onset.
+	onsetValidationPattern = regexp.MustCompile(`(?:今天|昨天|前天|上(?:周|个月|月|星期)|(?:近|最近)[一二两三四五六七八九十半几\d]+(?:天|周|个月|月|年)(?:前|来)?|(?:近|最近)?[一二两三四五六七八九十半几\d]+(?:天|周|个月|月|年)(?:前|来)|最近|近来)`)
 )
 
 func deriveConversationSignals(session domain.Session) (domain.ConversationSummary, []domain.Uncertainty, []domain.Contradiction) {

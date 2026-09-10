@@ -6,6 +6,17 @@ import (
 	"visitready/internal/domain"
 )
 
+// Temporal slots are canonical-or-empty: a duration/frequency answer to an
+// onset question must not be guessed into the onset slot.
+func TestTemporalSlotNeverGuessesFromWholeAnswer(t *testing.T) {
+	if values := clarificationSlotValues("timeline", "心悸每次约五分钟，一天两三次。"); len(values) != 0 {
+		t.Fatalf("onset question absorbed a duration/frequency answer: %v", values)
+	}
+	if values := clarificationSlotValues("duration", "最近三周开始的"); len(values) != 0 {
+		t.Fatalf("duration question absorbed an onset answer: %v", values)
+	}
+}
+
 // P4: common non-numeric Chinese answers must be preserved, not dropped.
 func TestClarificationSlotValuesPreservesFreeTextAnswers(t *testing.T) {
 	cases := []struct {

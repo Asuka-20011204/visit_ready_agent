@@ -850,13 +850,9 @@ func clarificationSlotValuesScoped(category, answer string, scoped bool) map[str
 		if match := spec.valueRe.FindString(answer); match != "" {
 			return map[string]string{spec.symptom: strings.TrimSpace(match)}
 		}
-		// No canonical shape matched. Preserve the user's wording only when it
-		// cues this slot (e.g. "偶尔" for frequency, "半天" for duration); an
-		// answer that is clearly about a different slot yields nothing instead
-		// of contaminating this one.
-		if value := cueScopedValue(spec.symptom, answer); value != "" {
-			return map[string]string{spec.symptom: value}
-		}
+		// Temporal slots are canonical-or-empty: an answer outside the shared
+		// vocabulary is left empty and never guessed from the surrounding
+		// sentence, so a frequency answer cannot leak into onset or duration.
 		return nil
 	}
 	if spec.symptom == "trigger" {
@@ -880,8 +876,8 @@ func clarificationSlotValuesScoped(category, answer string, scoped bool) map[str
 }
 
 // cueScopedValue keeps only the answer clauses that cue a free-text slot, so a
-// multi-question answer or a shape mismatch cannot push another slot's wording
-// into this one. An answer with no matching clause yields an empty value.
+// multi-question answer cannot push another question's clause into this slot.
+// An answer with no matching clause yields an empty value.
 func cueScopedValue(slot, answer string) string {
 	cues := slotValueCues(slot)
 	if len(cues) == 0 {
@@ -900,16 +896,11 @@ func cueScopedValue(slot, answer string) string {
 }
 
 // slotValueCues are the phrases that mark a clause as belonging to a given
-// free-text slot. They are only used to prevent one slot from absorbing
-// another question's clause in a multi-question answer.
+// free-text slot. They are only used to prevent one free-text slot from
+// absorbing another question's clause in a multi-question answer; temporal
+// slots use the canonical vocabulary above instead.
 func slotValueCues(slot string) []string {
 	switch slot {
-	case "duration":
-		return []string{"半天", "一会", "一阵", "整天", "整晚", "分钟", "小时", "秒", "持续", "很久"}
-	case "frequency":
-		return []string{"偶尔", "时不时", "经常", "频繁", "几次", "每天", "每周", "一天", "一周", "每晚", "很少", "不常", "一直"}
-	case "onset":
-		return []string{"开始", "以来", "最近", "上个月", "上周", "去年", "前", "今天", "昨天", "前天", "起病"}
 	case "severity":
 		return []string{"影响", "程度", "严重", "剧烈", "厉害", "受不了", "无法", "没法", "不影响", "轻微", "特别", "非常"}
 	case "pattern":
