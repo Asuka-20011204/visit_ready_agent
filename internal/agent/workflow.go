@@ -119,7 +119,7 @@ func (r *Runner) extractionValidatorNode(_ context.Context, state workflowState)
 		return workflowState{}, fmt.Errorf("all %d extracted facts failed evidence validation", rejected)
 	}
 	next.Session.Facts = mergeGroundedFacts(next.priorFacts, validated.Facts)
-	next.Session.SymptomProfiles = mergeSymptomProfiles(next.priorProfiles, validated.SymptomProfiles, latestTurnCorrection(next.Session.ClarificationTurns))
+	next.Session.SymptomProfiles = mergeSymptomProfiles(next.priorProfiles, validated.SymptomProfiles, latestTurnCorrectedSlots(next.Session.ClarificationTurns))
 	next.Session.SymptomProfiles = mergeClarificationSlots(next.Session.SymptomProfiles, next.Session.ClarificationTurns)
 	next.Session = mergeClarificationGlobals(next.Session, next.Session.ClarificationTurns)
 	next.Session.Timeline = mergeTimeline(next.priorTimeline, validated.Timeline)
@@ -156,7 +156,7 @@ func (r *Runner) evidenceNode(_ context.Context, state workflowState) (workflowS
 	next.Session.Uncertainties = uncertainties
 	next.Session.Contradictions = contradictions
 	next.Session.InterviewState = deriveInterviewState(next.Session, uncertainties, contradictions)
-	hasContradictions := len(contradictions) > 0
+	hasContradictions := len(unresolvedContradictions(contradictions)) > 0
 
 	safePrompts := make([]domain.Question, 0, len(next.Session.ClarificationPrompts)+len(next.Session.ClarificationQuestions))
 	seenPrompts := make(map[string]struct{})
@@ -185,7 +185,7 @@ func (r *Runner) evidenceNode(_ context.Context, state workflowState) (workflowS
 			seenPrompts[key] = struct{}{}
 		}
 	}
-	for _, contradiction := range next.Session.Contradictions {
+	for _, contradiction := range unresolvedContradictions(next.Session.Contradictions) {
 		prompt := domain.Question{Text: contradiction.ClarifyingQuestion, Reason: "Agent 发现两段回答指向不同信息，先确认原话再生成最终摘要", Priority: contradiction.Priority, Category: "missing_detail"}
 		key := normalizeFactEvidence(prompt.Text)
 		if _, exists := seenPrompts[key]; !exists && isSafeClarificationPrompt(prompt) {
@@ -193,18 +193,16 @@ func (r *Runner) evidenceNode(_ context.Context, state workflowState) (workflowS
 			seenPrompts[key] = struct{}{}
 		}
 	}
-	if next.Session.ClarificationCount > 0 {
-		for _, prompt := range missingFieldPrompts(next.Session) {
-			if prompt.Text == "" || !isSafeClarificationPrompt(prompt) {
-				continue
-			}
-			key := normalizeFactEvidence(prompt.Text)
-			if _, exists := seenPrompts[key]; exists {
-				continue
-			}
-			seenPrompts[key] = struct{}{}
-			safePrompts = append(safePrompts, prompt)
+	for _, prompt := range missingFieldPrompts(next.Session) {
+		if prompt.Text == "" || !isSafeClarificationPrompt(prompt) {
+			continue
 		}
+		key := normalizeFactEvidence(prompt.Text)
+		if _, exists := seenPrompts[key]; exists {
+			continue
+		}
+		seenPrompts[key] = struct{}{}
+		safePrompts = append(safePrompts, prompt)
 	}
 	safePrompts = prioritizeQuestions(safePrompts, 3)
 	next.Session.ClarificationPrompts = safePrompts
@@ -214,12 +212,14 @@ func (r *Runner) evidenceNode(_ context.Context, state workflowState) (workflowS
 	}
 	next.Session = r.addEvent(next.Session, "evidence", "completed", fmt.Sprintf("%d 项事实通过原文校验", len(next.Session.Facts)))
 
-	if hasContradictions && len(next.Session.ClarificationQuestions) > 0 {
-		next.Session.Status = domain.StatusWaitingClarification
-		next.Session = r.addEvent(next.Session, "clarification", "waiting", "发现不同说法，需要用户确认后继续")
-	} else if next.Session.ClarificationCount < maxClarificationRounds && len(next.Session.ClarificationQuestions) > 0 {
-		next.Session.Status = domain.StatusWaitingClarification
-		next.Session = r.addEvent(next.Session, "clarification", "waiting", "需要用户补充一轮信息")
+	if next.Session.ClarificationCount < maxClarificationRounds && len(next.Session.ClarificationQuestions) > 0 {
+		if hasContradictions {
+			next.Session.Status = domain.StatusWaitingClarification
+			next.Session = r.addEvent(next.Session, "clarification", "waiting", "发现不同说法，需要用户确认后继续")
+		} else {
+			next.Session.Status = domain.StatusWaitingClarification
+			next.Session = r.addEvent(next.Session, "clarification", "waiting", "需要用户补充一轮信息")
+		}
 	}
 	return next, nil
 }
@@ -254,7 +254,7 @@ func clarificationPromptForMissingField(field, category string, session domain.S
 		if subject == "" {
 			return domain.Question{}
 		}
-		return domain.Question{Text: subject + "一天或一周大约出现几次？", Reason: "补全仍未确认的发生频率", Priority: priority, Category: "frequency"}
+		return domain.Question{Text: subject + "大概多久发作一次？", Reason: "补全仍未确认的发生频率", Priority: priority, Category: "frequency"}
 	case "onset":
 		if subject == "" {
 			return domain.Question{}
@@ -278,11 +278,11 @@ func clarificationPromptForMissingField(field, category string, session domain.S
 	}
 	switch category {
 	case "medication":
-		return domain.Question{Text: missingFieldQuestionText(field, "用药"), Reason: "补全仍未确认的用药信息", Priority: priority, Category: "medication"}
+		return domain.Question{Text: "目前正在服用哪些药物或保健品？", Reason: "补全仍未确认的用药信息", Priority: priority, Category: "medication"}
 	case "allergy":
-		return domain.Question{Text: missingFieldQuestionText(field, "过敏"), Reason: "补全仍未确认的过敏信息", Priority: priority, Category: "allergy"}
+		return domain.Question{Text: "对哪些药物、食物或环境因素过敏？", Reason: "补全仍未确认的过敏信息", Priority: priority, Category: "allergy"}
 	case "history":
-		return domain.Question{Text: missingFieldQuestionText(field, "既往史"), Reason: "补全仍未确认的既往情况", Priority: priority, Category: "history"}
+		return domain.Question{Text: "既往有哪些需要向医生说明的疾病、手术或外伤？", Reason: "补全仍未确认的既往情况", Priority: priority, Category: "history"}
 	case "safety":
 		return domain.Question{Text: missingFieldQuestionText(field, "安全相关"), Reason: "补全仍未确认的安全相关信息", Priority: priority, Category: "safety"}
 	}
@@ -821,6 +821,15 @@ func clarificationSlotValue(category, answer string) (string, string) {
 // fills. The trigger question asks about both aggravating and relieving factors,
 // so its answer is split into two slots.
 func clarificationSlotValues(category, answer string) map[string]string {
+	return clarificationSlotValuesScoped(category, answer, false)
+}
+
+// clarificationSlotValuesScoped is the same extraction, but in scoped mode a
+// value that does not match its slot's canonical shape falls back to the
+// clauses that cue that slot instead of the whole answer. mergeClarificationSlots
+// uses scoped mode when one answer addresses several questions, so a free-text
+// slot cannot absorb another question's clause.
+func clarificationSlotValuesScoped(category, answer string, scoped bool) map[string]string {
 	spec, ok := clarificationSlotSpecFor(category)
 	if !ok || spec.symptom == "" {
 		return nil
@@ -830,11 +839,17 @@ func clarificationSlotValues(category, answer string) map[string]string {
 		return nil
 	}
 	if spec.valueRe != nil {
-		match := spec.valueRe.FindString(answer)
-		if match == "" {
-			return nil
+		if match := spec.valueRe.FindString(answer); match != "" {
+			return map[string]string{spec.symptom: strings.TrimSpace(match)}
 		}
-		return map[string]string{spec.symptom: strings.TrimSpace(match)}
+		// No canonical shape matched. Preserve the user's wording only when it
+		// cues this slot (e.g. "偶尔" for frequency, "半天" for duration); an
+		// answer that is clearly about a different slot yields nothing instead
+		// of contaminating this one.
+		if value := cueScopedValue(spec.symptom, answer); value != "" {
+			return map[string]string{spec.symptom: value}
+		}
+		return nil
 	}
 	if spec.symptom == "trigger" {
 		triggerValue, relievingValue := splitTriggerAndRelieving(answer)
@@ -847,7 +862,55 @@ func clarificationSlotValues(category, answer string) map[string]string {
 		}
 		return values
 	}
+	if scoped {
+		if value := cueScopedValue(spec.symptom, answer); value != "" {
+			return map[string]string{spec.symptom: value}
+		}
+		return nil
+	}
 	return map[string]string{spec.symptom: clipFreeTextValue(answer)}
+}
+
+// cueScopedValue keeps only the answer clauses that cue a free-text slot, so a
+// multi-question answer or a shape mismatch cannot push another slot's wording
+// into this one. An answer with no matching clause yields an empty value.
+func cueScopedValue(slot, answer string) string {
+	cues := slotValueCues(slot)
+	if len(cues) == 0 {
+		return clipFreeTextValue(answer)
+	}
+	kept := make([]string, 0, 3)
+	for _, clause := range splitAnswerClauses(answer) {
+		if hasAny(clause, cues...) {
+			kept = append(kept, clause)
+		}
+	}
+	if len(kept) == 0 {
+		return ""
+	}
+	return clipRunes(strings.Join(kept, "，"), 200)
+}
+
+// slotValueCues are the phrases that mark a clause as belonging to a given
+// free-text slot. They are only used to prevent one slot from absorbing
+// another question's clause in a multi-question answer.
+func slotValueCues(slot string) []string {
+	switch slot {
+	case "duration":
+		return []string{"半天", "一会", "一阵", "整天", "整晚", "分钟", "小时", "秒", "持续", "很久"}
+	case "frequency":
+		return []string{"偶尔", "时不时", "经常", "频繁", "几次", "每天", "每周", "一天", "一周", "每晚", "很少", "不常", "一直"}
+	case "onset":
+		return []string{"开始", "以来", "最近", "上个月", "上周", "去年", "前", "今天", "昨天", "前天", "起病"}
+	case "severity":
+		return []string{"影响", "程度", "严重", "剧烈", "厉害", "受不了", "无法", "没法", "不影响", "轻微", "特别", "非常"}
+	case "pattern":
+		return []string{"规律", "固定", "白天", "晚上", "夜间", "早晨", "早上", "下午", "间断", "持续", "一阵", "一直", "每天", "总是"}
+	case "associated":
+		return []string{"伴随", "伴有", "还有", "同时", "以及", "并且", "加上", "另外", "也"}
+	default:
+		return nil
+	}
 }
 
 func clipFreeTextValue(answer string) string {
@@ -896,8 +959,9 @@ func clipRunes(value string, limit int) string {
 func mergeClarificationSlots(profiles []domain.SymptomProfile, turns []domain.ClarificationTurn) []domain.SymptomProfile {
 	merged := cloneSymptomProfiles(profiles)
 	for _, turn := range turns {
+		scoped := len(turn.Questions) > 1
 		for _, question := range turn.Questions {
-			values := clarificationSlotValues(question.Category, turn.Answer)
+			values := clarificationSlotValuesScoped(question.Category, turn.Answer, scoped)
 			if len(values) == 0 {
 				continue
 			}
@@ -1206,14 +1270,42 @@ func profileSlotForMissingField(field string) string {
 	}
 }
 
-func latestTurnCorrection(turns []domain.ClarificationTurn) bool {
+// latestTurnCorrectedSlots returns the profile slots the user explicitly
+// corrected this round. A correction only authorizes overwriting the slots the
+// latest turn actually asked about, so "更正一下持续时间" cannot overwrite an
+// unrelated onset the re-extraction happened to move.
+func latestTurnCorrectedSlots(turns []domain.ClarificationTurn) map[string]bool {
+	result := make(map[string]bool)
 	if len(turns) == 0 {
-		return false
+		return result
 	}
-	return containsAnyPhrase(turns[len(turns)-1].Answer, "更正", "为准", "说错了", "记错了")
+	last := turns[len(turns)-1]
+	if !containsAnyPhrase(last.Answer, "更正", "为准", "说错了", "记错了") {
+		return result
+	}
+	for _, question := range last.Questions {
+		switch question.Category {
+		case "duration":
+			result["duration"] = true
+		case "frequency":
+			result["frequency"] = true
+		case "timeline":
+			result["onset"] = true
+		case "trigger":
+			result["trigger"] = true
+			result["relieving"] = true
+		case "severity":
+			result["severity"] = true
+		case "pattern":
+			result["pattern"] = true
+		case "associated_symptom", "symptom_detail", "associated", "missing_detail":
+			result["associated"] = true
+		}
+	}
+	return result
 }
 
-func mergeSymptomProfiles(prior, current []domain.SymptomProfile, correction bool) []domain.SymptomProfile {
+func mergeSymptomProfiles(prior, current []domain.SymptomProfile, corrected map[string]bool) []domain.SymptomProfile {
 	merged := cloneSymptomProfiles(prior)
 	byName := make(map[string]int, len(merged))
 	for index, profile := range merged {
@@ -1225,7 +1317,7 @@ func mergeSymptomProfiles(prior, current []domain.SymptomProfile, correction boo
 			continue
 		}
 		if index, exists := byName[key]; exists {
-			merged[index] = mergeSymptomProfile(merged[index], incoming, correction)
+			merged[index] = mergeSymptomProfile(merged[index], incoming, corrected)
 			continue
 		}
 		byName[key] = len(merged)
@@ -1234,7 +1326,7 @@ func mergeSymptomProfiles(prior, current []domain.SymptomProfile, correction boo
 	return merged
 }
 
-func mergeSymptomProfile(prior, incoming domain.SymptomProfile, correction bool) domain.SymptomProfile {
+func mergeSymptomProfile(prior, incoming domain.SymptomProfile, corrected map[string]bool) domain.SymptomProfile {
 	merged := prior
 	if strings.TrimSpace(incoming.Name) != "" {
 		merged.Name = incoming.Name
@@ -1245,19 +1337,28 @@ func mergeSymptomProfile(prior, incoming domain.SymptomProfile, correction bool)
 		merged.EvidenceQuotes = appendUniqueStrings(merged.EvidenceQuotes, []string{incoming.SourceQuote})
 	}
 	// Re-extraction may misassign a value to another slot; once a slot has a
-	// value it stays unless the user explicitly corrected it this round.
-	for field, value := range map[*string]string{
-		&merged.Onset: incoming.Onset, &merged.Duration: incoming.Duration, &merged.Frequency: incoming.Frequency,
-		&merged.Severity: incoming.Severity, &merged.Pattern: incoming.Pattern, &merged.Trigger: incoming.Trigger,
-		&merged.RelievingFactors: incoming.RelievingFactors,
-	} {
-		if strings.TrimSpace(value) == "" {
+	// value it stays unless the user explicitly corrected that slot this round.
+	slots := []struct {
+		ptr      *string
+		name     string
+		incoming string
+	}{
+		{&merged.Onset, "onset", incoming.Onset},
+		{&merged.Duration, "duration", incoming.Duration},
+		{&merged.Frequency, "frequency", incoming.Frequency},
+		{&merged.Severity, "severity", incoming.Severity},
+		{&merged.Pattern, "pattern", incoming.Pattern},
+		{&merged.Trigger, "trigger", incoming.Trigger},
+		{&merged.RelievingFactors, "relieving", incoming.RelievingFactors},
+	}
+	for _, slot := range slots {
+		if strings.TrimSpace(slot.incoming) == "" {
 			continue
 		}
-		if !correction && strings.TrimSpace(*field) != "" {
+		if !corrected[slot.name] && strings.TrimSpace(*slot.ptr) != "" {
 			continue
 		}
-		*field = value
+		*slot.ptr = slot.incoming
 	}
 	merged.AssociatedSymptoms = appendUniqueStrings(merged.AssociatedSymptoms, incoming.AssociatedSymptoms)
 	merged.EvidenceQuotes = appendUniqueStrings(merged.EvidenceQuotes, incoming.EvidenceQuotes)
@@ -1362,6 +1463,20 @@ func groundedSymptomProfiles(input string, profiles []domain.SymptomProfile, tur
 		profile.Pattern = groundedProfileValue(profile, profile.Pattern, "pattern", turns, len(profiles) == 1)
 		profile.Trigger = groundedProfileValue(profile, profile.Trigger, "trigger", turns, len(profiles) == 1)
 		profile.RelievingFactors = groundedProfileValue(profile, profile.RelievingFactors, "trigger", turns, len(profiles) == 1)
+		// A slot value must point in the right direction: a relieving factor in
+		// the trigger slot (or vice versa) is moved instead of being dropped.
+		if triggerValue, relievingValue := splitTriggerAndRelieving(profile.Trigger); triggerValue == "" && relievingValue != "" {
+			if strings.TrimSpace(profile.RelievingFactors) == "" {
+				profile.RelievingFactors = relievingValue
+			}
+			profile.Trigger = ""
+		}
+		if triggerValue, relievingValue := splitTriggerAndRelieving(profile.RelievingFactors); relievingValue == "" && triggerValue != "" {
+			if strings.TrimSpace(profile.Trigger) == "" {
+				profile.Trigger = triggerValue
+			}
+			profile.RelievingFactors = ""
+		}
 		associated := make([]string, 0, len(profile.AssociatedSymptoms))
 		for _, symptom := range profile.AssociatedSymptoms {
 			if value := groundedProfileValue(profile, symptom, "associated_symptom", turns, len(profiles) == 1); value != "" {

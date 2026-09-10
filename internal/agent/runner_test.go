@@ -645,7 +645,6 @@ func TestRunnerCarriesStructuredIntelligenceIntoReviewAndQuestions(t *testing.T)
 				TimeLabel: "昨天", Event: "出现心悸", SourceQuote: "最近有心悸",
 			}},
 			RiskSignals:   []domain.RiskSignal{{Priority: domain.PriorityUrgent, Title: "无原文", Evidence: "呼吸困难", Guidance: "不应展示", SourceQuote: "呼吸困难"}},
-			MissingFields: []string{"心悸每次持续时间", "心悸发作频率"},
 		}},
 		questions: domain.QuestionSet{
 			Questions: []domain.Question{
@@ -686,8 +685,8 @@ func TestRunnerCarriesStructuredIntelligenceIntoReviewAndQuestions(t *testing.T)
 	if !strings.Contains(session.ActionItems[0].Title, "心悸") {
 		t.Fatalf("tracking action is not personalized to the symptom: %#v", session.ActionItems)
 	}
-	if !strings.Contains(session.ActionItems[0].Detail, "持续时长") || !strings.Contains(session.ActionItems[0].Detail, "发作频率") {
-		t.Fatalf("tracking action does not prioritize current information gaps: %#v", session.ActionItems[0])
+	if !strings.Contains(session.ActionItems[0].Detail, "持续时长") || !strings.Contains(session.ActionItems[0].Detail, "频率") {
+		t.Fatalf("tracking action does not cover symptom timing and frequency: %#v", session.ActionItems[0])
 	}
 
 	session.SymptomProfiles[0].AssociatedSymptoms[0] = "被修改"

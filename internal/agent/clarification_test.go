@@ -108,14 +108,17 @@ func TestMergeSymptomProfileKeepsPriorUnlessCorrection(t *testing.T) {
 	prior := domain.SymptomProfile{Name: "心悸", Duration: "五分钟", Onset: "最近", Frequency: "每天两次"}
 	incoming := domain.SymptomProfile{Name: "心悸", Duration: "三周", Onset: "偶尔", Frequency: "最近几天更明显", SourceQuote: "最近心悸"}
 
-	merged := mergeSymptomProfile(prior, incoming, false)
+	merged := mergeSymptomProfile(prior, incoming, nil)
 	if merged.Duration != "五分钟" || merged.Onset != "最近" || merged.Frequency != "每天两次" {
 		t.Fatalf("non-correction merge overwrote prior slots: %#v", merged)
 	}
 
-	corrected := mergeSymptomProfile(prior, incoming, true)
+	corrected := mergeSymptomProfile(prior, incoming, map[string]bool{"duration": true})
 	if corrected.Duration != "三周" {
 		t.Fatalf("correction merge kept prior duration: %#v", corrected)
+	}
+	if corrected.Onset != "最近" || corrected.Frequency != "每天两次" {
+		t.Fatalf("scoped correction overwrote unrelated slots: %#v", corrected)
 	}
 }
 

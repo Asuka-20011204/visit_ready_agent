@@ -75,6 +75,9 @@ type Contradiction struct {
 	SecondEvidence     string   `json:"second_evidence"`
 	ClarifyingQuestion string   `json:"clarifying_question"`
 	Priority           Priority `json:"priority"`
+	// Resolution is the user's chosen value when a clarification answer picks
+	// one candidate without negating it; empty means still unresolved.
+	Resolution string `json:"resolution,omitempty"`
 }
 
 type ConversationSummary struct {

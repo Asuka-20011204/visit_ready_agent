@@ -79,7 +79,7 @@ func deriveConversationSignals(session domain.Session) (domain.ConversationSumma
 	for _, item := range uncertainties {
 		open = append(open, item.Topic)
 	}
-	for _, item := range contradictions {
+	for _, item := range unresolvedContradictions(contradictions) {
 		open = append(open, item.Topic+"存在不同说法")
 	}
 	subject := symptomSubject(session)
@@ -116,7 +116,7 @@ func deriveInterviewState(session domain.Session, uncertainties []domain.Uncerta
 		ConfirmedCount: confirmed, OpenCount: len(uncertainties) + len(contradictions),
 	}
 	switch {
-	case len(contradictions) > 0:
+	case len(unresolvedContradictions(contradictions)) > 0:
 		state.CompletionReason = "conflict_needs_clarification"
 	case len(uncertainties) == 0:
 		state.CompletionReason = "sufficient_context"
@@ -153,14 +153,13 @@ func findContradictions(session domain.Session) []domain.Contradiction {
 				}
 			}
 			if len(values) > 1 {
-				if contradictionWasResolved(session.ClarificationTurns, values) {
-					continue
-				}
+				resolution, resolved := resolveContradiction(session.ClarificationTurns, values)
 				result = append(result, domain.Contradiction{
 					Topic: profile.Name + "·" + field.label, FirstEvidence: values[0], SecondEvidence: values[1],
 					ClarifyingQuestion: "关于" + profile.Name + "的" + field.label + "，哪种说法更接近实际；如果两种情况都会发生，需要如何分别记录？",
-					Priority:           domain.PriorityHigh,
+					Priority:           domain.PriorityHigh, Resolution: resolution,
 				})
+				_ = resolved
 			}
 			if len(result) == 3 {
 				return result
@@ -170,19 +169,55 @@ func findContradictions(session domain.Session) []domain.Contradiction {
 	return result
 }
 
-func contradictionWasResolved(turns []domain.ClarificationTurn, values []string) bool {
+// resolveContradiction reports the candidate the user picked in a clarification
+// answer, if any. A clear choice is one candidate value named without negating
+// it or hedging it, while not also naming another candidate. Resolving only on
+// keyword shortcuts ("为准") would drop plain answers like "每次大约一小时".
+func resolveContradiction(turns []domain.ClarificationTurn, values []string) (string, bool) {
 	for index := len(turns) - 1; index >= 0; index-- {
 		answer := turns[index].Answer
-		if !containsAnyPhrase(answer, "为准", "说错了", "记错了", "更正为") {
-			continue
-		}
+		matched := ""
 		for _, value := range values {
-			if strings.Contains(answer, value) {
-				return true
+			if !strings.Contains(answer, value) {
+				continue
+			}
+			if matched == "" {
+				matched = value
+				continue
+			}
+			if matched != value {
+				matched = ""
+				break // two different candidates named together: still ambiguous
 			}
 		}
+		if matched == "" {
+			continue
+		}
+		negated := false
+		for _, clause := range relevantClauses(answer, "") {
+			if strings.Contains(clause, matched) && (clauseDenies(clause) || isUncertainAnswer(clause)) {
+				negated = true
+				break
+			}
+		}
+		if negated {
+			continue
+		}
+		return matched, true
 	}
-	return false
+	return "", false
+}
+
+// unresolvedContradictions keeps only contradictions the user has not resolved,
+// so resolved ones no longer block review or count as open threads.
+func unresolvedContradictions(contradictions []domain.Contradiction) []domain.Contradiction {
+	result := make([]domain.Contradiction, 0, len(contradictions))
+	for _, contradiction := range contradictions {
+		if contradiction.Resolution == "" {
+			result = append(result, contradiction)
+		}
+	}
+	return result
 }
 
 func containsAnyPhrase(value string, phrases ...string) bool {

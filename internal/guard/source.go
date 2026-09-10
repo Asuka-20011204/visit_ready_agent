@@ -30,6 +30,9 @@ func DetectEmergencySignals(input string) []domain.RiskSignal {
 	for segmentIndex, segment := range segments {
 		for _, evidence := range positiveEmergencyTerms(segment) {
 			later := segments[segmentIndex+1:]
+			if isChestDiscomfort(evidence) && !hasChestDiscomfortAlarm(segment, later) {
+				continue
+			}
 			if laterSegmentResolvesEvidence(evidence, later) || evidenceCorrectedByLaterContext(evidence, later) {
 				continue
 			}
@@ -69,7 +72,7 @@ func DetectEmergencySignals(input string) []domain.RiskSignal {
 
 func laterSegmentResolvesEvidence(evidence string, segments []string) bool {
 	for _, segment := range segments {
-		if !containsAny(segment, []string{"现在已经好了", "现在好了", "目前已经好了", "目前好了", "已经缓解", "已缓解", "已经消失", "已消失", "不再出现", "恢复正常", "今天正常"}) {
+		if !hasEmergencyResolution(segment) {
 			continue
 		}
 		if containsEquivalentEmergencyTerm(segment, evidence) {
@@ -96,12 +99,13 @@ func sameEmergencyFamily(first, second string) bool {
 		return true
 	}
 	families := [][]string{
-		{"胸痛", "胸口疼", "胸口剧痛"},
-		{"呼吸困难", "喘不上气", "喘不过气", "气短", "无法呼吸"},
+		{"胸痛", "胸口疼", "胸口剧痛", "胸部疼痛", "左胸疼痛", "右胸疼痛", "胸口疼痛"},
+		{"胸闷", "胸口发闷", "胸口有压迫感"},
+		{"呼吸困难", "喘不上气", "喘不过气", "气短", "无法呼吸", "呼吸很困难", "透不过气", "气喘不过来"},
 		{"晕厥", "晕倒", "差点晕", "眼前发黑", "意识不清", "神志不清"},
 		{"大量出血", "止不住血", "吐血", "呕血", "咯血"},
-		{"单侧无力", "一侧无力"},
-		{"说话不清", "言语不清"},
+		{"单侧无力", "一侧无力", "左半边身体使不上劲", "右半边身体使不上劲", "左半边身体麻木无力", "右半边身体麻木无力"},
+		{"说话不清", "言语不清", "讲话含糊不清", "说话含糊不清"},
 	}
 	for _, family := range families {
 		firstInFamily, secondInFamily := false, false
@@ -119,6 +123,7 @@ func sameEmergencyFamily(first, second string) bool {
 func implicitlyResolvesPreviousEvidence(segment string) bool {
 	segment = strings.TrimSpace(segment)
 	for _, prefix := range []string{
+		"现在已经不疼了", "现在不疼了", "目前已经不疼了", "后来自己好了", "后来恢复了",
 		"现在已经好了", "现在好了", "目前已经好了", "目前好了", "已经缓解", "已缓解",
 		"已经消失", "已消失", "不再出现", "恢复正常", "今天正常", "症状已经缓解",
 		"症状已缓解", "症状已经消失", "症状已消失", "这个症状已经缓解", "这个症状已缓解",
@@ -133,11 +138,11 @@ func implicitlyResolvesPreviousEvidence(segment string) bool {
 
 func evidenceCorrectedByLaterContext(evidence string, segments []string) bool {
 	context := strings.Join(segments, "，")
-	if !containsAny(context, []string{"不，是", "不，", "不是", "而是", "改为", "应该是"}) {
+	if !containsAny(context, []string{"不，是", "不，", "而是", "改为", "应该是"}) {
 		return false
 	}
 	correctionIndex := -1
-	for _, marker := range []string{"不，是", "不，", "不是", "而是", "改为", "应该是"} {
+	for _, marker := range []string{"不，是", "不，", "而是", "改为", "应该是"} {
 		if index := strings.Index(context, marker); index >= 0 && (correctionIndex < 0 || index < correctionIndex) {
 			correctionIndex = index
 		}
@@ -160,11 +165,11 @@ func evidenceCorrectedByLaterContext(evidence string, segments []string) bool {
 func continuedHistoricalEvidence(input string, segments []string) []string {
 	result := make([]string, 0, 1)
 	for _, evidence := range emergencyTerms() {
-		if !strings.Contains(input, evidence) || !containsAny(input, []string{"以前", "曾经", "既往", "过去", "半年前", "一年前", "多年前"}) {
+		if !strings.Contains(input, evidence) || !hasHistoricalEmergencyCue(input) {
 			continue
 		}
 		for index, segment := range segments {
-			if !strings.Contains(segment, evidence) || !containsAny(segment, []string{"以前", "曾经", "既往", "过去", "半年前", "一年前", "多年前"}) {
+			if !strings.Contains(segment, evidence) || !hasHistoricalEmergencyCue(segment) {
 				continue
 			}
 			if explicitlyContinuesHistoricalSymptom(evidence, segments[index+1:]) {
@@ -177,9 +182,9 @@ func continuedHistoricalEvidence(input string, segments []string) []string {
 
 func explicitlyContinuesHistoricalSymptom(evidence string, segments []string) bool {
 	later := strings.Join(segments, "，")
-	for _, segment := range segments {
+	for index, segment := range segments {
 		for _, term := range positiveEmergencyTerms(segment) {
-			if sameEmergencyFamily(term, evidence) {
+			if sameEmergencyFamily(term, evidence) && !laterSegmentResolvesEvidence(term, segments[index+1:]) {
 				return true
 			}
 		}
@@ -187,8 +192,11 @@ func explicitlyContinuesHistoricalSymptom(evidence string, segments []string) bo
 	if containsAny(later, emergencyTerms()) || containsAny(later, []string{"头痛", "胃痛", "腹痛", "咳嗽", "发热", "发烧", "心悸"}) {
 		return false
 	}
+	if laterSegmentResolvesEvidence(evidence, segments) {
+		return false
+	}
 	if sameEmergencyFamily(evidence, "胸痛") {
-		return containsAny(later, []string{"现在还在痛", "目前还在痛", "现在仍在痛", "目前仍在痛", "现在仍然痛", "目前仍然痛", "至今还痛"})
+		return containsAny(later, []string{"现在又开始疼", "今天又开始疼", "一直没缓解", "一直没有缓解", "现在还在痛", "目前还在痛", "现在仍在痛", "目前仍在痛", "现在仍然痛", "目前仍然痛", "至今还痛"})
 	}
 	return containsAny(later, []string{"现在仍在发作", "目前仍在发作", "现在还在发作", "目前还在发作", "至今未缓解"})
 }
@@ -221,7 +229,7 @@ func emergencyMentionExcluded(prefix, suffix string) bool {
 	if directlyNegatesEmergencyTerm(trimmedPrefix) || coordinatedEmergencyNegation(trimmedPrefix) {
 		return true
 	}
-	if containsAny(trimmedPrefix, []string{"如果", "假如", "假设", "要是", "一旦", "以后出现", "将来出现"}) {
+	if containsAny(prefix, []string{"如果", "假如", "假设", "要是", "一旦", "以后出现", "将来出现"}) {
 		return true
 	}
 	if containsAny(trimmedPrefix, []string{"是否", "会不会"}) && !hasCurrentEmergencyCue(trimmedPrefix) {
@@ -233,14 +241,13 @@ func emergencyMentionExcluded(prefix, suffix string) bool {
 	if containsAny(trimmedSuffix, []string{"是否", "会不会", "算不算", "是不是"}) && !hasCurrentEmergencyCue(trimmedPrefix) {
 		return true
 	}
-	if containsAny(trimmedPrefix, []string{"昨天", "前天", "半年前", "一年前", "三年前", "多年前", "以前", "曾经", "既往", "过去", "出现过"}) &&
+	if hasHistoricalEmergencyCue(trimmedPrefix) &&
 		!hasCurrentEmergencyCue(trimmedPrefix) && !containsAny(trimmedSuffix, []string{"一直", "持续", "仍然", "还在", "未缓解", "加重"}) {
 		return true
 	}
 	return containsAny(trimmedSuffix, []string{
 		"都没有出现", "均未出现", "均没有出现", "并没有出现", "没有这些表现", "这些表现都没有",
-		"已缓解", "已经缓解", "已消失", "已经消失", "现在好了", "已经好了", "不再出现",
-	})
+	}) || hasEmergencyResolution(trimmedSuffix)
 }
 
 func directlyNegatesEmergencyTerm(prefix string) bool {
@@ -329,9 +336,70 @@ func emergencySegments(input string) []string {
 	for _, pivot := range []string{"但是", "然而", "但"} {
 		input = strings.ReplaceAll(input, pivot, "。")
 	}
-	return strings.FieldsFunc(input, func(char rune) bool {
-		return strings.ContainsRune("。！？!?；;，,\n", char)
-	})
+	// A contrasting subject starts a new scope; additive 而且 does not.
+	input = regexp.MustCompile(`而([^且是])`).ReplaceAllString(input, "。$1")
+	var result []string
+	for _, sentence := range strings.FieldsFunc(input, func(char rune) bool {
+		return strings.ContainsRune("。！？!?；;\n", char)
+	}) {
+		hypothetical := false
+		for _, clause := range strings.FieldsFunc(sentence, func(char rune) bool { return char == '，' || char == ',' }) {
+			if containsAny(clause, []string{"如果", "假如", "假设", "要是", "一旦"}) {
+				hypothetical = true
+			} else if hypothetical {
+				// A comma does not terminate the condition's scope.
+				clause = "如果" + clause
+			}
+			result = append(result, clause)
+		}
+	}
+	return result
+}
+
+var historicalEmergencyPattern = regexp.MustCompile(`(?:[一二三四五六七八九十百两半几多0-9]+个?(?:天|周|星期|月|年)前|上(?:周|个月|月|星期)|昨天|前天|以前|曾经|既往|过去|出现过)`)
+
+func hasHistoricalEmergencyCue(value string) bool {
+	return historicalEmergencyPattern.MatchString(value)
+}
+
+func hasEmergencyResolution(value string) bool {
+	for _, marker := range []string{"已缓解", "已经缓解", "已消失", "已经消失", "现在好了", "已经好了", "不再出现", "恢复正常", "今天正常", "不疼了", "自己好了", "后来恢复了"} {
+		for offset := 0; offset < len(value); {
+			relative := strings.Index(value[offset:], marker)
+			if relative < 0 {
+				break
+			}
+			index := offset + relative
+			offset = index + len(marker)
+			prefix := value[:index]
+			if !directlyNegatesEmergencyTerm(prefix) && !strings.HasSuffix(prefix, "并没有") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isChestDiscomfort(term string) bool {
+	return sameEmergencyFamily(term, "胸闷")
+}
+
+// Chest discomfort alone is nonspecific; pair it with a locally asserted
+// alarm symptom or ongoing severe/worsening symptoms, never sweat alone.
+func hasChestDiscomfortAlarm(segment string, later []string) bool {
+	context := segment
+	if len(later) > 0 && strings.HasPrefix(strings.TrimSpace(later[0]), "还") {
+		context += "并且" + later[0]
+	}
+	if hasCurrentEmergencyCue(segment) {
+		return true
+	}
+	for _, term := range []string{"冷汗", "冒冷汗", "呼吸困难", "喘不过气", "气喘不过来", "透不过气"} {
+		if index := strings.Index(context, term); index >= 0 && !emergencyMentionExcluded(context[:index], context[index+len(term):]) {
+			return true
+		}
+	}
+	return false
 }
 
 func emergencyTerms() []string {
@@ -339,6 +407,9 @@ func emergencyTerms() []string {
 		"胸痛", "胸口疼", "胸口剧痛", "呼吸困难", "喘不上气", "喘不过气", "气短", "晕厥", "晕倒", "差点晕", "眼前发黑", "意识不清", "神志不清", "失去意识",
 		"单侧无力", "一侧无力", "一侧脸歪", "口角歪斜", "说话不清", "言语不清", "大量出血", "止不住血", "吐血", "呕血", "咯血", "抽搐", "持续惊厥",
 		"无法呼吸", "喉咙肿胀", "严重过敏", "服毒", "中毒", "想自杀", "伤害自己",
+		"胸部疼痛", "左胸疼痛", "右胸疼痛", "胸口疼痛", "胸闷", "胸口发闷", "胸口有压迫感",
+		"呼吸很困难", "透不过气", "气喘不过来", "讲话含糊不清", "说话含糊不清",
+		"左半边身体使不上劲", "右半边身体使不上劲", "左半边身体麻木无力", "右半边身体麻木无力",
 	}
 }
 
