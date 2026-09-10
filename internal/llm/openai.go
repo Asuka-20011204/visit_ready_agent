@@ -137,7 +137,11 @@ func (c *OpenAICompatibleClient) Extract(ctx context.Context, input string) (dom
 func sanitizeOptionalExtraction(input string, result domain.Extraction) domain.Extraction {
 	hadStructuredPrompts := len(result.ClarificationPrompts) > 0
 	for index := range result.Facts {
-		result.Facts[index].Content = strings.TrimSpace(result.Facts[index].SourceQuote)
+		content := strings.TrimSpace(result.Facts[index].Content)
+		if !groundedValue(result.Facts[index].SourceQuote, content) {
+			content = strings.TrimSpace(result.Facts[index].SourceQuote)
+		}
+		result.Facts[index].Content = content
 	}
 
 	profiles := make([]domain.SymptomProfile, 0, len(result.SymptomProfiles))
@@ -534,6 +538,28 @@ func validateQuestion(question domain.Question) error {
 func groundedQuote(input, quote string) bool {
 	quote = strings.TrimSpace(quote)
 	return quote != "" && strings.Contains(input, quote)
+}
+
+func groundedValue(quote, value string) bool {
+	quote = strings.Join(strings.Fields(strings.TrimSpace(quote)), "")
+	value = strings.Join(strings.Fields(strings.TrimSpace(value)), "")
+	if value == "" {
+		return false
+	}
+	if strings.Contains(quote, value) {
+		return true
+	}
+	valueRunes := []rune(value)
+	if len(valueRunes) < 3 {
+		return false
+	}
+	valueIndex := 0
+	for _, char := range []rune(quote) {
+		if valueIndex < len(valueRunes) && char == valueRunes[valueIndex] {
+			valueIndex++
+		}
+	}
+	return valueIndex == len(valueRunes)
 }
 
 func validPriority(priority domain.Priority) bool {

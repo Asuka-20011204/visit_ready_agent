@@ -71,6 +71,7 @@ func (r *Runner) extractNode(ctx context.Context, state workflowState) (workflow
 		next.priorFacts = append([]domain.Fact(nil), next.Session.Facts...)
 		next.priorProfiles = cloneSymptomProfiles(next.Session.SymptomProfiles)
 		next.priorTimeline = append([]domain.TimelineEvent(nil), next.Session.Timeline...)
+		next.priorMissing = append([]string(nil), next.Session.MissingFields...)
 		next.priorGoal = next.Session.VisitGoal
 	}
 
@@ -115,14 +116,16 @@ func (r *Runner) extractionValidatorNode(_ context.Context, state workflowState)
 	}
 	next.Session.Facts = mergeGroundedFacts(next.priorFacts, validated.Facts)
 	next.Session.SymptomProfiles = mergeSymptomProfiles(next.priorProfiles, validated.SymptomProfiles)
+	next.Session.SymptomProfiles = mergeClarificationSlots(next.Session.SymptomProfiles, next.Session.ClarificationTurns)
 	next.Session.Timeline = mergeTimeline(next.priorTimeline, validated.Timeline)
+	missing := append(append([]string(nil), next.priorMissing...), validated.MissingFields...)
+	next.Session.MissingFields = reconcileMissingFields(missing, next.Session.SymptomProfiles)
 	if goal := strings.TrimSpace(validated.VisitGoal); goal != "" {
 		next.Session.VisitGoal = goal
 	} else if next.priorGoal != "" {
 		next.Session.VisitGoal = next.priorGoal
 	}
 	next.Session.RiskSignals = validated.RiskSignals
-	next.Session.MissingFields = validated.MissingFields
 	next.Session.RejectedFactCount += rejected
 	if len(validated.Facts) == 0 {
 		next.Session = r.addEvent(next.Session, "validator", "degraded", "本轮提取未通过原文校验，已保留已确认事实")
@@ -180,6 +183,20 @@ func (r *Runner) evidenceNode(_ context.Context, state workflowState) (workflowS
 			seenPrompts[key] = struct{}{}
 		}
 	}
+	if next.Session.ClarificationCount > 0 {
+		for _, field := range next.Session.MissingFields {
+			prompt := clarificationPromptForMissingField(field, next.Session)
+			if prompt.Text == "" || !isSafeClarificationPrompt(prompt) {
+				continue
+			}
+			key := normalizeFactEvidence(prompt.Text)
+			if _, exists := seenPrompts[key]; exists {
+				continue
+			}
+			seenPrompts[key] = struct{}{}
+			safePrompts = append(safePrompts, prompt)
+		}
+	}
 	safePrompts = prioritizeQuestions(safePrompts, 3)
 	next.Session.ClarificationPrompts = safePrompts
 	next.Session.ClarificationQuestions = make([]string, 0, len(safePrompts))
@@ -196,6 +213,46 @@ func (r *Runner) evidenceNode(_ context.Context, state workflowState) (workflowS
 		next.Session = r.addEvent(next.Session, "clarification", "waiting", "需要用户补充一轮信息")
 	}
 	return next, nil
+}
+
+func clarificationPromptForMissingField(field string, session domain.Session) domain.Question {
+	subject := missingFieldSubject(field, session.SymptomProfiles)
+	if subject == "" {
+		return domain.Question{}
+	}
+	priority := uncertaintyPriority(field)
+	switch profileSlotForMissingField(field) {
+	case "duration":
+		return domain.Question{Text: subject + "每次大约持续多久？", Reason: "补全仍未确认的持续时间", Priority: priority, Category: "duration"}
+	case "frequency":
+		return domain.Question{Text: subject + "一天或一周大约出现几次？", Reason: "补全仍未确认的发生频率", Priority: priority, Category: "frequency"}
+	case "onset":
+		return domain.Question{Text: subject + "大约从什么时候开始？", Reason: "补全仍未确认的开始时间", Priority: priority, Category: "timeline"}
+	case "trigger":
+		return domain.Question{Text: subject + "在什么情况下更明显，怎样会缓解？", Reason: "补全仍未确认的诱因或缓解因素", Priority: priority, Category: "trigger"}
+	case "severity":
+		return domain.Question{Text: subject + "目前对日常活动有什么影响？", Reason: "补全仍未确认的日常影响", Priority: priority, Category: "severity"}
+	case "associated":
+		return domain.Question{Text: subject + "出现时还伴有哪些不适？", Reason: "补全仍未确认的伴随表现", Priority: priority, Category: "associated_symptom"}
+	default:
+		return domain.Question{}
+	}
+}
+
+func missingFieldSubject(field string, profiles []domain.SymptomProfile) string {
+	matches := make([]string, 0, len(profiles))
+	for _, profile := range profiles {
+		if profile.Name != "" && strings.Contains(field, profile.Name) {
+			matches = append(matches, profile.Name)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0]
+	}
+	if len(matches) == 0 && len(profiles) == 1 {
+		return profiles[0].Name
+	}
+	return ""
 }
 
 func (r *Runner) emergencyEscalationNode(_ context.Context, state workflowState) (workflowState, error) {
@@ -371,10 +428,81 @@ func (r *Runner) questionValidatorNode(_ context.Context, state workflowState) (
 		return next, nil
 	}
 	validated := validateQuestionSet(domain.QuestionSet{Questions: next.Session.Questions, ActionItems: next.Session.ActionItems})
-	next.Session.Questions = validated.Questions
+	next.Session.Questions = filterRedundantDoctorQuestions(validated.Questions, next.Session.SymptomProfiles)
 	next.Session.ActionItems = validated.ActionItems
 	next.Session = r.addEvent(next.Session, "validator", "completed", "模型生成内容已通过独立边界校验")
 	return next, nil
+}
+
+func filterRedundantDoctorQuestions(questions []domain.Question, profiles []domain.SymptomProfile) []domain.Question {
+	filtered := make([]domain.Question, 0, len(questions))
+	for _, question := range questions {
+		if questionTargetsFilledSlot(question, profiles) {
+			continue
+		}
+		filtered = append(filtered, question)
+	}
+	return filtered
+}
+
+func questionTargetsFilledSlot(question domain.Question, profiles []domain.SymptomProfile) bool {
+	text := question.Text
+	targeted := make(map[string]struct{})
+	for _, profile := range profiles {
+		if profile.Name != "" && strings.Contains(text, profile.Name) {
+			targeted[normalizeFactEvidence(profile.Name)] = struct{}{}
+		}
+	}
+	field := profileSlotForQuestion(question)
+	if field == "" {
+		return false
+	}
+	for _, profile := range profiles {
+		if len(targeted) > 0 {
+			if _, ok := targeted[normalizeFactEvidence(profile.Name)]; !ok {
+				continue
+			}
+		}
+		if !profileSlotFilled(profile, field) {
+			return false
+		}
+	}
+	return len(profiles) > 0
+}
+
+func profileSlotForQuestion(question domain.Question) string {
+	text := question.Text
+	switch {
+	case question.Category == "duration" || strings.Contains(text, "持续多久") || strings.Contains(text, "持续多长"):
+		return "duration"
+	case question.Category == "frequency" || strings.Contains(text, "发作几次") || strings.Contains(text, "频率"):
+		return "frequency"
+	case question.Category == "timeline" || strings.Contains(text, "什么时候开始") || strings.Contains(text, "开始时间"):
+		return "onset"
+	case question.Category == "trigger" || strings.Contains(text, "什么情况下") || strings.Contains(text, "诱因"):
+		return "trigger"
+	default:
+		return ""
+	}
+}
+
+func profileSlotFilled(profile domain.SymptomProfile, field string) bool {
+	switch field {
+	case "duration":
+		return strings.TrimSpace(profile.Duration) != ""
+	case "frequency":
+		return strings.TrimSpace(profile.Frequency) != ""
+	case "onset":
+		return strings.TrimSpace(profile.Onset) != ""
+	case "trigger":
+		return strings.TrimSpace(profile.Trigger) != "" || strings.TrimSpace(profile.RelievingFactors) != ""
+	case "severity":
+		return strings.TrimSpace(profile.Severity) != ""
+	case "associated":
+		return len(profile.AssociatedSymptoms) > 0
+	default:
+		return false
+	}
 }
 
 func fallbackQuestionSet(session domain.Session) domain.QuestionSet {
@@ -492,24 +620,200 @@ func mergeGroundedFacts(prior, current []domain.Fact) []domain.Fact {
 	return deduplicateFacts(append(append([]domain.Fact(nil), prior...), current...))
 }
 
+func reconcileMissingFields(fields []string, profiles []domain.SymptomProfile) []string {
+	result := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" || missingFieldCovered(field, profiles) {
+			continue
+		}
+		result = append(result, field)
+	}
+	return safeMissingFields(result)
+}
+
+func mergeClarificationSlots(profiles []domain.SymptomProfile, turns []domain.ClarificationTurn) []domain.SymptomProfile {
+	merged := cloneSymptomProfiles(profiles)
+	for _, turn := range turns {
+		for _, question := range turn.Questions {
+			field, value := clarificationSlotValue(question.Category, turn.Answer)
+			if field == "" || value == "" || valueIsUncertain(turn.Answer, value) {
+				continue
+			}
+			targets := clarificationTargets(question.Text, merged)
+			for _, index := range targets {
+				if !profileSlotFilled(merged[index], field) || containsAnyPhrase(turn.Answer, "更正", "为准", "说错了", "记错了") {
+					setProfileSlot(&merged[index], field, value)
+				}
+				merged[index].EvidenceQuotes = appendUniqueStrings(merged[index].EvidenceQuotes, []string{turn.Answer})
+			}
+		}
+	}
+	return merged
+}
+
+func clarificationSlotValue(category, answer string) (string, string) {
+	switch category {
+	case "duration":
+		return "duration", strings.TrimSpace(clarificationDurationValuePattern.FindString(answer))
+	case "frequency":
+		return "frequency", strings.TrimSpace(frequencyValuePattern.FindString(answer))
+	case "timeline":
+		return "onset", strings.TrimSpace(onsetValuePattern.FindString(answer))
+	default:
+		return "", ""
+	}
+}
+
+func clarificationTargets(question string, profiles []domain.SymptomProfile) []int {
+	result := make([]int, 0, len(profiles))
+	for index, profile := range profiles {
+		if profile.Name != "" && strings.Contains(question, profile.Name) {
+			result = append(result, index)
+		}
+	}
+	if len(result) > 1 {
+		return nil
+	}
+	if len(result) == 0 && len(profiles) == 1 {
+		return []int{0}
+	}
+	return result
+}
+
+func setProfileSlot(profile *domain.SymptomProfile, field, value string) {
+	switch field {
+	case "duration":
+		profile.Duration = value
+	case "frequency":
+		profile.Frequency = value
+	case "onset":
+		profile.Onset = value
+	}
+}
+
+func missingFieldCovered(field string, profiles []domain.SymptomProfile) bool {
+	targeted := make(map[string]struct{})
+	for _, profile := range profiles {
+		if profile.Name != "" && strings.Contains(field, profile.Name) {
+			targeted[normalizeFactEvidence(profile.Name)] = struct{}{}
+		}
+	}
+	slot := profileSlotForMissingField(field)
+	if slot == "" {
+		return false
+	}
+	for _, profile := range profiles {
+		if len(targeted) > 0 {
+			if _, ok := targeted[normalizeFactEvidence(profile.Name)]; !ok {
+				continue
+			}
+		}
+		if !profileSlotFilled(profile, slot) {
+			return false
+		}
+		if strings.Contains(field, "缓解") || strings.Contains(field, "减轻") {
+			if strings.TrimSpace(profile.RelievingFactors) == "" {
+				return false
+			}
+		}
+		if strings.Contains(field, "程度") || strings.Contains(field, "严重") || strings.Contains(field, "影响") {
+			if strings.TrimSpace(profile.Severity) == "" {
+				return false
+			}
+		}
+		if strings.Contains(field, "伴随") || strings.Contains(field, "相关症状") {
+			if len(profile.AssociatedSymptoms) == 0 {
+				return false
+			}
+		}
+	}
+	return len(profiles) > 0
+}
+
+func profileSlotForMissingField(field string) string {
+	switch {
+	case strings.Contains(field, "开始") || strings.Contains(field, "起病"):
+		return "onset"
+	case strings.Contains(field, "持续"):
+		return "duration"
+	case strings.Contains(field, "频率") || strings.Contains(field, "次数"):
+		return "frequency"
+	case strings.Contains(field, "诱因") || strings.Contains(field, "加重") || strings.Contains(field, "缓解") || strings.Contains(field, "减轻"):
+		return "trigger"
+	case strings.Contains(field, "程度") || strings.Contains(field, "严重") || strings.Contains(field, "影响"):
+		return "severity"
+	case strings.Contains(field, "伴随") || strings.Contains(field, "相关症状"):
+		return "associated"
+	default:
+		return ""
+	}
+}
+
 func mergeSymptomProfiles(prior, current []domain.SymptomProfile) []domain.SymptomProfile {
-	if len(current) == 0 {
-		return cloneSymptomProfiles(prior)
+	merged := cloneSymptomProfiles(prior)
+	byName := make(map[string]int, len(merged))
+	for index, profile := range merged {
+		byName[normalizeFactEvidence(profile.Name)] = index
 	}
-	merged := cloneSymptomProfiles(current)
-	seen := make(map[string]struct{}, len(merged))
-	for _, profile := range merged {
-		seen[normalizeFactEvidence(profile.Name+"|"+profile.SourceQuote)] = struct{}{}
+	for _, incoming := range current {
+		key := normalizeFactEvidence(incoming.Name)
+		if key == "" {
+			continue
+		}
+		if index, exists := byName[key]; exists {
+			merged[index] = mergeSymptomProfile(merged[index], incoming)
+			continue
+		}
+		byName[key] = len(merged)
+		merged = append(merged, incoming)
 	}
-	for _, profile := range prior {
-		key := normalizeFactEvidence(profile.Name + "|" + profile.SourceQuote)
+	return merged
+}
+
+func mergeSymptomProfile(prior, incoming domain.SymptomProfile) domain.SymptomProfile {
+	merged := prior
+	if strings.TrimSpace(incoming.Name) != "" {
+		merged.Name = incoming.Name
+	}
+	if strings.TrimSpace(merged.SourceQuote) == "" && strings.TrimSpace(incoming.SourceQuote) != "" {
+		merged.SourceQuote = incoming.SourceQuote
+	} else if normalizeFactEvidence(incoming.SourceQuote) != normalizeFactEvidence(merged.SourceQuote) {
+		merged.EvidenceQuotes = appendUniqueStrings(merged.EvidenceQuotes, []string{incoming.SourceQuote})
+	}
+	for field, value := range map[*string]string{
+		&merged.Onset: incoming.Onset, &merged.Duration: incoming.Duration, &merged.Frequency: incoming.Frequency,
+		&merged.Severity: incoming.Severity, &merged.Pattern: incoming.Pattern, &merged.Trigger: incoming.Trigger,
+		&merged.RelievingFactors: incoming.RelievingFactors,
+	} {
+		if strings.TrimSpace(value) != "" {
+			*field = value
+		}
+	}
+	merged.AssociatedSymptoms = appendUniqueStrings(merged.AssociatedSymptoms, incoming.AssociatedSymptoms)
+	merged.EvidenceQuotes = appendUniqueStrings(merged.EvidenceQuotes, incoming.EvidenceQuotes)
+	return merged
+}
+
+func appendUniqueStrings(prior, incoming []string) []string {
+	result := append([]string(nil), prior...)
+	seen := make(map[string]struct{}, len(result))
+	for _, value := range result {
+		seen[normalizeFactEvidence(value)] = struct{}{}
+	}
+	for _, value := range incoming {
+		value = strings.TrimSpace(value)
+		key := normalizeFactEvidence(value)
+		if key == "" {
+			continue
+		}
 		if _, exists := seen[key]; exists {
 			continue
 		}
 		seen[key] = struct{}{}
-		merged = append(merged, profile)
+		result = append(result, value)
 	}
-	return merged
+	return result
 }
 
 func mergeTimeline(prior, current []domain.TimelineEvent) []domain.TimelineEvent {
@@ -571,7 +875,7 @@ func groundedSymptomProfiles(input string, profiles []domain.SymptomProfile, tur
 	for _, profile := range profiles {
 		profile.Name = strings.TrimSpace(profile.Name)
 		profile.SourceQuote = strings.TrimSpace(profile.SourceQuote)
-		if profile.Name == "" || !isGroundedQuote(input, profile.SourceQuote) || !isGroundedValue(profile.SourceQuote, profile.Name) {
+		if profile.Name == "" || !isGroundedQuote(input, profile.SourceQuote) || !isGroundedProfileName(profile.SourceQuote, profile.Name) {
 			continue
 		}
 		evidenceQuotes := make([]string, 0, len(profile.EvidenceQuotes))
@@ -678,7 +982,10 @@ func groundedTimeline(input string, timeline []domain.TimelineEvent) []domain.Ti
 			continue
 		}
 		event.TimeLabel = groundedValue(event.SourceQuote, event.TimeLabel)
-		event.Event = event.SourceQuote
+		event.Event = groundedValue(event.SourceQuote, event.Event)
+		if event.Event == "" {
+			event.Event = event.SourceQuote
+		}
 		result = append(result, event)
 	}
 	return result
@@ -686,15 +993,45 @@ func groundedTimeline(input string, timeline []domain.TimelineEvent) []domain.Ti
 
 func groundedValue(quote, value string) string {
 	value = strings.TrimSpace(value)
-	if value == "" || !isGroundedValue(quote, value) {
+	if value == "" || !isGroundedValueWithVariants(quote, value) {
 		return ""
 	}
 	return value
 }
 
+func isGroundedValueWithVariants(quote, value string) bool {
+	if isGroundedValue(quote, value) {
+		return true
+	}
+	for _, suffix := range []string{"前", "来"} {
+		if strings.HasSuffix(value, suffix) && isGroundedValue(quote, strings.TrimSuffix(value, suffix)) {
+			return true
+		}
+	}
+	return false
+}
+
 func isGroundedValue(quote, value string) bool {
 	normalizedValue := normalizeFactEvidence(value)
 	return len([]rune(normalizedValue)) >= 1 && strings.Contains(normalizeFactEvidence(quote), normalizedValue)
+}
+
+func isGroundedProfileName(quote, name string) bool {
+	if isGroundedValue(quote, name) {
+		return true
+	}
+	normalizedName := []rune(normalizeFactEvidence(name))
+	normalizedQuote := normalizeFactEvidence(quote)
+	if len(normalizedName) < 3 {
+		return false
+	}
+	nameIndex := 0
+	for _, char := range []rune(normalizedQuote) {
+		if nameIndex < len(normalizedName) && char == normalizedName[nameIndex] {
+			nameIndex++
+		}
+	}
+	return nameIndex == len(normalizedName)
 }
 
 func hasAny(value string, candidates ...string) bool {
@@ -811,6 +1148,7 @@ func cloneWorkflowState(source workflowState) workflowState {
 		priorFacts:    append([]domain.Fact(nil), source.priorFacts...),
 		priorProfiles: cloneSymptomProfiles(source.priorProfiles),
 		priorTimeline: append([]domain.TimelineEvent(nil), source.priorTimeline...),
+		priorMissing:  append([]string(nil), source.priorMissing...),
 		priorGoal:     source.priorGoal,
 	}
 }

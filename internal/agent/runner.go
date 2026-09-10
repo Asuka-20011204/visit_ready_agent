@@ -65,6 +65,7 @@ type workflowState struct {
 	priorFacts    []domain.Fact
 	priorProfiles []domain.SymptomProfile
 	priorTimeline []domain.TimelineEvent
+	priorMissing  []string
 	priorGoal     string
 }
 

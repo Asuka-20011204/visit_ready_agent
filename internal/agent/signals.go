@@ -8,9 +8,10 @@ import (
 )
 
 var (
-	durationValuePattern  = regexp.MustCompile(`每次(?:约|大约)?[一二两三四五六七八九十半\d]+(?:秒钟?|分钟?|小时)`)
-	frequencyValuePattern = regexp.MustCompile(`(?:每天|每晚|每周|一周|一天)[一二两三四五六七八九十\d]+次`)
-	onsetValuePattern     = regexp.MustCompile(`(?:今天|昨天|前天|(?:近|最近)?[一二两三四五六七八九十\d]+(?:天|周|个月|月|年)(?:前|来))`)
+	durationValuePattern              = regexp.MustCompile(`(?:每次\s*(?:约|大约|大概)?|(?:约|大约|大概)?\s*持续)\s*[一二两三四五六七八九十半\d]+\s*(?:(?:到|至|-|~)\s*[一二两三四五六七八九十半\d]+\s*)?(?:秒钟?|分钟?|小时)`)
+	clarificationDurationValuePattern = regexp.MustCompile(`(?:每次)?\s*(?:约|大约|大概)?\s*(?:持续)?\s*[一二两三四五六七八九十半\d]+\s*(?:(?:到|至|-|~)\s*[一二两三四五六七八九十半\d]+\s*)?(?:秒钟?|分钟?|小时)`)
+	frequencyValuePattern             = regexp.MustCompile(`(?:每天|每晚|每周|一周|一天)[一二两三四五六七八九十\d]+次`)
+	onsetValuePattern                 = regexp.MustCompile(`(?:今天|昨天|前天|(?:近|最近)?[一二两三四五六七八九十\d]+(?:天|周|个月|月|年)(?:前|来))`)
 )
 
 func deriveConversationSignals(session domain.Session) (domain.ConversationSummary, []domain.Uncertainty, []domain.Contradiction) {
@@ -73,7 +74,7 @@ func deriveConversationSignals(session domain.Session) (domain.ConversationSumma
 }
 
 func isUncertainAnswer(answer string) bool {
-	for _, phrase := range []string{"不确定", "可能", "记不清", "想不起来", "大概"} {
+	for _, phrase := range []string{"不确定", "可能", "记不清", "想不起来", "说不清", "无法确定"} {
 		if strings.Contains(answer, phrase) {
 			return true
 		}

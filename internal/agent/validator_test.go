@@ -39,6 +39,16 @@ func TestValidateExtractionRejectsUnsupportedPatientClaims(t *testing.T) {
 	}
 }
 
+func TestValidateExtractionPreservesGroundedStructuredFactContent(t *testing.T) {
+	input := "最近出现心悸发作，每次大约五分钟。"
+	result, _ := validateExtraction(input, domain.Extraction{Facts: []domain.Fact{{
+		Category: "symptom", Content: "心悸发作", SourceQuote: input,
+	}}}, nil)
+	if len(result.Facts) != 1 || result.Facts[0].Content != "心悸发作" {
+		t.Fatalf("grounded structured content was replaced by raw quote: %#v", result.Facts)
+	}
+}
+
 func TestValidateQuestionSetFiltersMedicalAndSensitiveBoundaryViolations(t *testing.T) {
 	candidate := domain.QuestionSet{
 		Questions: []domain.Question{

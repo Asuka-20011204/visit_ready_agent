@@ -15,7 +15,11 @@ func validateExtraction(input string, candidate domain.Extraction, turns []domai
 	accepted, rejected := guard.PartitionGroundedFacts(input, candidate.Facts)
 	validated.Facts = deduplicateFacts(accepted)
 	for index := range validated.Facts {
-		validated.Facts[index].Content = strings.TrimSpace(validated.Facts[index].SourceQuote)
+		content := strings.TrimSpace(validated.Facts[index].Content)
+		if !isGroundedProfileName(validated.Facts[index].SourceQuote, content) {
+			content = strings.TrimSpace(validated.Facts[index].SourceQuote)
+		}
+		validated.Facts[index].Content = content
 		validated.Facts[index].TimeLabel = ""
 	}
 	validated.SymptomProfiles = groundedSymptomProfiles(input, candidate.SymptomProfiles, turns)

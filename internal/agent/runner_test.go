@@ -335,7 +335,7 @@ func TestRunnerKeepsPriorFactsWhenClarificationExtractionIsUngrounded(t *testing
 	fact := domain.Fact{Category: "symptom", Content: "左手腕偶尔会酸胀", SourceQuote: "左手腕偶尔会酸胀"}
 	model := &fakeLLM{
 		extractions: []domain.Extraction{
-			{VisitGoal: "整理手腕酸胀", Facts: []domain.Fact{fact}, ClarificationPrompts: []domain.Question{{Text: "麻木通常持续多久？", Reason: "补充病程", Priority: domain.PriorityHigh, Category: "duration"}}},
+			{VisitGoal: "整理手腕酸胀", Facts: []domain.Fact{fact}, SymptomProfiles: []domain.SymptomProfile{{Name: "左手腕酸胀", SourceQuote: fact.SourceQuote}}, ClarificationPrompts: []domain.Question{{Text: "麻木通常持续多久？", Reason: "补充病程", Priority: domain.PriorityHigh, Category: "duration"}}},
 			{VisitGoal: "整理手腕酸胀", Facts: []domain.Fact{{Category: "symptom", Content: "腕管综合征", SourceQuote: "模型编造的诊断"}}},
 		},
 		questions: domain.QuestionSet{Questions: []domain.Question{{Text: "我还需要向医生说明哪些手腕变化？"}}},
@@ -354,6 +354,9 @@ func TestRunnerKeepsPriorFactsWhenClarificationExtractionIsUngrounded(t *testing
 	}
 	if len(session.Facts) != 1 || session.Facts[0].SourceQuote != fact.SourceQuote {
 		t.Fatalf("prior grounded facts were not retained: %#v", session.Facts)
+	}
+	if len(session.SymptomProfiles) != 1 || session.SymptomProfiles[0].Duration != "大概持续 10 到 20 分钟" {
+		t.Fatalf("duration was not recovered from the clarification answer: %#v", session.SymptomProfiles)
 	}
 	if session.Status != domain.StatusWaitingReview {
 		t.Fatalf("ungrounded second extraction status = %q, want waiting_review", session.Status)
@@ -388,6 +391,59 @@ func TestRunnerMergesGroundedClarificationFactsWithPriorFacts(t *testing.T) {
 	quotes := session.Facts[0].SourceQuote + " " + session.Facts[1].SourceQuote
 	if !strings.Contains(quotes, fact.SourceQuote) || !strings.Contains(quotes, added.SourceQuote) {
 		t.Fatalf("merged facts lost prior or new evidence: %#v", session.Facts)
+	}
+}
+
+func TestRunnerMergesClarificationProfileFieldsWithoutDroppingPriorState(t *testing.T) {
+	initial := "这三周左手腕偶尔会酸胀，用鼠标超过半小时就会发酸。"
+	answer := "麻木不是每次用鼠标都会出现，大概持续 10 到 20 分钟。"
+	model := &fakeLLM{
+		extractions: []domain.Extraction{
+			{
+				VisitGoal: "整理手腕酸胀和麻木", Facts: []domain.Fact{{Category: "symptom", Content: initial, SourceQuote: initial}},
+				SymptomProfiles:      []domain.SymptomProfile{{Name: "左手腕酸胀", Onset: "三周前", Trigger: "用鼠标超过半小时", SourceQuote: initial}},
+				MissingFields:        []string{"麻木每次持续多久", "是否需要记录体温"},
+				ClarificationPrompts: []domain.Question{{Text: "麻木每次持续多久？", Category: "duration", Priority: domain.PriorityHigh}},
+			},
+			{
+				VisitGoal: "整理手腕酸胀和麻木", Facts: []domain.Fact{{Category: "symptom", Content: answer, SourceQuote: answer}},
+				SymptomProfiles: []domain.SymptomProfile{{Name: "左手腕酸胀", Duration: "大概持续 10 到 20 分钟", SourceQuote: initial, EvidenceQuotes: []string{answer}}},
+				MissingFields:   []string{"麻木每次持续多久"},
+			},
+		},
+		questions: domain.QuestionSet{Questions: []domain.Question{
+			{Text: "麻木每次持续多久？", Category: "duration"},
+			{Text: "是否需要向医生说明日常活动影响？", Category: "visit"},
+		}},
+	}
+	runner := newRunner(t, model, &fakeSearch{})
+	session, err := runner.Start(context.Background(), initial, false)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	session, err = runner.Resume(context.Background(), session, answer)
+	if err != nil {
+		t.Fatalf("Resume() error = %v", err)
+	}
+	if len(session.SymptomProfiles) != 1 {
+		t.Fatalf("profiles = %#v", session.SymptomProfiles)
+	}
+	profile := session.SymptomProfiles[0]
+	if profile.Onset != "三周前" || profile.Trigger != "用鼠标超过半小时" || profile.Duration != "大概持续 10 到 20 分钟" {
+		t.Fatalf("incremental profile merge lost fields: %#v", profile)
+	}
+	if len(session.Uncertainties) != 1 || session.Uncertainties[0].Topic != "是否需要记录体温" {
+		t.Fatalf("answered missing field was not reconciled: %#v", session.Uncertainties)
+	}
+	for _, question := range session.Questions {
+		if question.Category == "duration" {
+			t.Fatalf("doctor questions repeated answered duration: %#v", session.Questions)
+		}
+	}
+	for _, item := range session.Uncertainties {
+		if item.Topic == "补充回答" {
+			t.Fatalf("approximate answer was treated as whole-turn uncertainty: %#v", session.Uncertainties)
+		}
 	}
 }
 

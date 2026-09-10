@@ -104,3 +104,23 @@ func TestMarkdownDoesNotDuplicateConversationSummaryPunctuation(t *testing.T) {
 		t.Fatalf("conversation summary = %q", text)
 	}
 }
+
+func TestMarkdownCollapsesEvidenceWhenContentIsTheSourceQuote(t *testing.T) {
+	session := domain.Session{
+		Status:    domain.StatusCompleted,
+		VisitGoal: "整理心悸相关情况并向医生说明",
+		Facts:     []domain.Fact{{Category: "symptom", Content: "最近有心悸", SourceQuote: "最近有心悸"}},
+		Timeline:  []domain.TimelineEvent{{TimeLabel: "最近", Event: "最近有心悸", SourceQuote: "最近有心悸"}},
+	}
+	data, err := exporter.Markdown(session)
+	if err != nil {
+		t.Fatalf("Markdown() error = %v", err)
+	}
+	text := string(data)
+	if strings.Contains(text, "原文依据：最近有心悸") {
+		t.Fatalf("duplicate evidence line was not collapsed:\n%s", text)
+	}
+	if strings.Contains(text, "就诊时间线") && strings.Contains(text, "原文依据：最近有心悸") {
+		t.Fatalf("timeline repeated identical evidence:\n%s", text)
+	}
+}

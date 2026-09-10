@@ -41,7 +41,10 @@ func Markdown(session domain.Session) ([]byte, error) {
 		if fact.TimeLabel != "" {
 			fmt.Fprintf(&output, "（%s）", cleanText(fact.TimeLabel))
 		}
-		fmt.Fprintf(&output, "\n  - 原文依据：%s\n", cleanText(fact.SourceQuote))
+		output.WriteByte('\n')
+		if strings.TrimSpace(fact.Content) != strings.TrimSpace(fact.SourceQuote) && strings.TrimSpace(fact.SourceQuote) != "" {
+			fmt.Fprintf(&output, "  - 原文依据：%s\n", cleanText(fact.SourceQuote))
+		}
 	}
 	output.WriteString("\n")
 
@@ -179,7 +182,10 @@ func writeTimeline(output *strings.Builder, timeline []domain.TimelineEvent) {
 	}
 	output.WriteString("## 就诊时间线\n\n")
 	for _, event := range timeline {
-		fmt.Fprintf(output, "- **%s**：%s\n  - 原文依据：%s\n", cleanText(event.TimeLabel), cleanText(event.Event), cleanText(event.SourceQuote))
+		fmt.Fprintf(output, "- **%s**：%s\n", cleanText(event.TimeLabel), cleanText(event.Event))
+		if strings.TrimSpace(event.Event) != strings.TrimSpace(event.SourceQuote) && strings.TrimSpace(event.SourceQuote) != "" {
+			fmt.Fprintf(output, "  - 原文依据：%s\n", cleanText(event.SourceQuote))
+		}
 	}
 	output.WriteString("\n")
 }
