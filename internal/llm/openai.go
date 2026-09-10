@@ -164,6 +164,9 @@ func sanitizeOptionalExtraction(input string, result domain.Extraction) domain.E
 		facts = append(facts, fact)
 	}
 	result.Facts = facts
+	if len(result.Facts) > 30 {
+		result.Facts = result.Facts[:30]
+	}
 
 	profiles := make([]domain.SymptomProfile, 0, len(result.SymptomProfiles))
 	for _, profile := range result.SymptomProfiles {
@@ -207,18 +210,24 @@ func sanitizeOptionalExtraction(input string, result domain.Extraction) domain.E
 		}
 	}
 	result.ClarificationPrompts = prompts
+	if len(result.ClarificationPrompts) > 3 {
+		result.ClarificationPrompts = result.ClarificationPrompts[:3]
+	}
 	if hadStructuredPrompts {
-		result.ClarificationQuestions = make([]string, 0, len(prompts))
-		for _, prompt := range prompts {
+		result.ClarificationQuestions = make([]string, 0, len(result.ClarificationPrompts))
+		for _, prompt := range result.ClarificationPrompts {
 			result.ClarificationQuestions = append(result.ClarificationQuestions, prompt.Text)
 		}
+	}
+	if len(result.ClarificationQuestions) > 3 {
+		result.ClarificationQuestions = result.ClarificationQuestions[:3]
 	}
 
 	items := make([]domain.MissingField, 0, len(result.MissingFieldItems))
 	seenItems := make(map[string]struct{}, len(result.MissingFieldItems))
 	for _, item := range result.MissingFieldItems {
 		item.Field = strings.TrimSpace(item.Field)
-		if item.Field == "" {
+		if item.Field == "" || len([]rune(item.Field)) > 160 || guard.ContainsMedicalOverreach(item.Field) || len(guard.ScanPII(item.Field)) > 0 {
 			continue
 		}
 		if !validMissingFieldCategory(item.Category) {
@@ -232,6 +241,15 @@ func sanitizeOptionalExtraction(input string, result domain.Extraction) domain.E
 		items = append(items, item)
 	}
 	result.MissingFieldItems = items
+	if len(result.MissingFieldItems) > 20 {
+		result.MissingFieldItems = result.MissingFieldItems[:20]
+	}
+	if len(result.MissingFields) > 20 {
+		result.MissingFields = result.MissingFields[:20]
+	}
+	if len(result.SearchQueries) > 2 {
+		result.SearchQueries = result.SearchQueries[:2]
+	}
 	return result
 }
 
@@ -508,63 +526,11 @@ func decodeStrictJSON(data []byte, target any) error {
 }
 
 func validateExtraction(input string, result domain.Extraction) error {
-	if len(result.Facts) == 0 || len(result.Facts) > 30 {
-		return errors.New("extraction must contain 1 to 30 facts")
-	}
-	if len(result.ClarificationQuestions) > 3 {
-		return errors.New("extraction contains too many clarification questions")
-	}
-	if len(result.MissingFields) > 20 || len(result.MissingFieldItems) > 20 {
-		return errors.New("extraction contains too many missing fields")
-	}
-	for _, field := range result.MissingFields {
-		if strings.TrimSpace(field) == "" || len([]rune(field)) > 160 || guard.ContainsMedicalOverreach(field) || len(guard.ScanPII(field)) > 0 {
-			return errors.New("extraction contains an unsafe missing field")
-		}
-	}
-	for _, item := range result.MissingFieldItems {
-		if strings.TrimSpace(item.Field) == "" || len([]rune(item.Field)) > 160 || guard.ContainsMedicalOverreach(item.Field) || len(guard.ScanPII(item.Field)) > 0 {
-			return errors.New("extraction contains an unsafe missing field")
-		}
-		if !validMissingFieldCategory(item.Category) {
-			return errors.New("extraction contains a missing field with an invalid category")
-		}
-	}
-	if len(result.ClarificationPrompts) > 3 {
-		return errors.New("extraction contains too many clarification prompts")
-	}
-	if len(result.SearchQueries) > 2 {
-		return errors.New("extraction contains too many search queries")
-	}
-	for _, fact := range result.Facts {
-		if strings.TrimSpace(fact.Category) == "" || strings.TrimSpace(fact.Content) == "" || strings.TrimSpace(fact.SourceQuote) == "" {
-			return errors.New("each fact requires category, content, and source_quote")
-		}
-	}
-	for _, profile := range result.SymptomProfiles {
-		if strings.TrimSpace(profile.Name) == "" || !groundedQuote(input, profile.SourceQuote) {
-			return errors.New("each symptom profile requires a grounded source_quote")
-		}
-		for _, quote := range profile.EvidenceQuotes {
-			if !groundedQuote(input, quote) {
-				return errors.New("symptom profile evidence_quote is not grounded in patient input")
-			}
-		}
-	}
-	for _, event := range result.Timeline {
-		if strings.TrimSpace(event.TimeLabel) == "" || strings.TrimSpace(event.Event) == "" || !groundedQuote(input, event.SourceQuote) {
-			return errors.New("each timeline event requires time, event, and grounded source_quote")
-		}
-	}
-	for _, signal := range result.RiskSignals {
-		if !validPriority(signal.Priority) || strings.TrimSpace(signal.Title) == "" || strings.TrimSpace(signal.Evidence) == "" || strings.TrimSpace(signal.Guidance) == "" || !groundedQuote(input, signal.SourceQuote) {
-			return errors.New("each risk signal requires valid priority and grounded evidence")
-		}
-	}
-	for _, prompt := range result.ClarificationPrompts {
-		if err := validateQuestion(prompt); err != nil {
-			return fmt.Errorf("invalid clarification prompt: %w", err)
-		}
+	// Item-level shape, grounding, safety and count constraints are enforced by
+	// sanitizeOptionalExtraction (drop/truncate). The only genuine failure is
+	// producing no usable fact at all.
+	if len(result.Facts) == 0 {
+		return errors.New("extraction must contain at least one fact")
 	}
 	return nil
 }

@@ -176,11 +176,14 @@ func TestOpenAICompatibleClientRejectsUnsafeRiskAndIncompleteQuestions(t *testin
 
 	unsafeMissingField := `{"visit_goal":"准备就诊","facts":[{"category":"symptom","content":"心悸","source_quote":"心悸"}],"risk_signals":[],"missing_fields":["你确定是甲状腺疾病，需要自行停药"],"clarification_questions":[],"search_queries":[]}`
 	client, closeServer := clientReturning(t, unsafeMissingField)
-	if _, err := client.Extract(context.Background(), "最近反复心悸，需要准备门诊沟通信息。当前没有提供其他症状。"); err == nil {
-		closeServer()
-		t.Fatal("Extract() accepted an unsafe missing field")
-	}
+	result, err := client.Extract(context.Background(), "最近反复心悸，需要准备门诊沟通信息。当前没有提供其他症状。")
 	closeServer()
+	if err != nil {
+		t.Fatalf("Extract() rejected valid facts because of an unsafe missing field: %v", err)
+	}
+	if len(result.MissingFieldItems) != 0 {
+		t.Fatalf("unsafe missing field survived filtering: %#v", result.MissingFieldItems)
+	}
 
 	for _, content := range []string{
 		`{"questions":[{"text":"何时开始？","priority":"high","category":"timeline"}]}`,
@@ -477,8 +480,6 @@ func TestOpenAICompatibleClientRejectsInvalidExtractionShapes(t *testing.T) {
 	responses := []string{
 		`{"visit_goal":"目标","facts":[],"missing_fields":[],"clarification_questions":[],"search_queries":[]}`,
 		`{"visit_goal":"目标","facts":[{"category":"symptom","content":"咳嗽","source_quote":""}],"missing_fields":[],"clarification_questions":[],"search_queries":[]}`,
-		`{"visit_goal":"目标","facts":[{"category":"symptom","content":"咳嗽","source_quote":"咳嗽"}],"missing_fields":[],"clarification_questions":["1","2","3","4"],"search_queries":[]}`,
-		`{"visit_goal":"目标","facts":[{"category":"symptom","content":"咳嗽","source_quote":"咳嗽"}],"missing_fields":[],"clarification_questions":[],"search_queries":["1","2","3"]}`,
 		`{"visit_goal":"目标","facts":[{"category":"symptom","content":"咳嗽","source_quote":"咳嗽"}],"missing_fields":[],"clarification_questions":[],"search_queries":[]} {}`,
 	}
 	for index, content := range responses {
@@ -488,6 +489,22 @@ func TestOpenAICompatibleClientRejectsInvalidExtractionShapes(t *testing.T) {
 			t.Fatalf("response %d error = nil", index)
 		}
 		closeServer()
+	}
+}
+
+func TestOpenAICompatibleClientTruncatesOverfullStructures(t *testing.T) {
+	content := `{"visit_goal":"目标","facts":[{"category":"symptom","content":"咳嗽","source_quote":"咳嗽"}],"missing_fields":[],"clarification_questions":["1","2","3","4"],"search_queries":["a","b","c"]}`
+	client, closeServer := clientReturning(t, content)
+	defer closeServer()
+	result, err := client.Extract(context.Background(), "我已经咳嗽三天，目前没有服用药物。")
+	if err != nil {
+		t.Fatalf("Extract() rejected overfull structures instead of truncating: %v", err)
+	}
+	if len(result.ClarificationQuestions) > 3 {
+		t.Fatalf("clarification questions were not truncated: %#v", result.ClarificationQuestions)
+	}
+	if len(result.SearchQueries) > 2 {
+		t.Fatalf("search queries were not truncated: %#v", result.SearchQueries)
 	}
 }
 

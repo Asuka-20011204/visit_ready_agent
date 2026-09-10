@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -80,8 +81,11 @@ func (r *Runner) extractNode(ctx context.Context, state workflowState) (workflow
 	input := extractionInput(next.Session)
 	extraction, err := r.llm.Extract(ctx, input)
 	if err != nil {
-		if len(next.priorFacts) > 0 && !isRetryableRunError(err) {
-			next.Session = r.addEvent(next.Session, "extract", "degraded", "本轮提取未能形成新的可核对事实，已保留已确认信息")
+		// Once facts are already confirmed, a failed re-extraction must not fail
+		// the run: keep the confirmed facts and let the deterministic slot
+		// write-back still apply this round's answer. Only cancellation aborts.
+		if len(next.priorFacts) > 0 && !errors.Is(err, context.Canceled) {
+			next.Session = r.addEvent(next.Session, "extract", "degraded", "本轮重新提取未完成，已保留已确认信息")
 			return next, nil
 		}
 		return workflowState{}, fmt.Errorf("extract facts: %w", err)

@@ -76,7 +76,7 @@ func TestRunnerStartFailureCanRetryWithoutResubmittingInput(t *testing.T) {
 	}
 }
 
-func TestRunnerResumeFailureRetainsAnswerForRetryExactlyOnce(t *testing.T) {
+func TestRunnerResumeDegradesOnReextractFailure(t *testing.T) {
 	input := "最近一周反复心悸，想进一步整理发作时长和频率，方便就诊时向医生说明。"
 	answer := "每天大约两次，每次持续十分钟。"
 	model := &recoveryLLM{
@@ -94,21 +94,18 @@ func TestRunnerResumeFailureRetainsAnswerForRetryExactlyOnce(t *testing.T) {
 	}
 	model.extraction.ClarificationPrompts = nil
 
-	failed, err := runner.Resume(context.Background(), waiting, answer)
-	if !errors.Is(err, agent.ErrUpstream) || failed.Status != domain.StatusFailed {
-		t.Fatalf("Resume() = %#v, %v", failed, err)
+	resumed, err := runner.Resume(context.Background(), waiting, answer)
+	if err != nil {
+		t.Fatalf("Resume() = %v, want a degraded success instead of a retryable failure", err)
 	}
-	if failed.ClarificationCount != 1 || len(failed.ClarificationTurns) != 1 {
-		t.Fatalf("failed clarification state = %#v", failed)
+	if resumed.Status != domain.StatusWaitingReview {
+		t.Fatalf("Resume() status = %q, want waiting_review after degrade", resumed.Status)
 	}
-
-	recovered, err := runner.Retry(context.Background(), failed)
-	if err != nil || recovered.Status != domain.StatusWaitingReview {
-		t.Fatalf("Retry() = %#v, %v", recovered, err)
+	if len(resumed.Facts) != 1 || resumed.Facts[0].SourceQuote != "反复心悸" {
+		t.Fatalf("confirmed facts lost during degrade: %#v", resumed.Facts)
 	}
-	lastInput := model.inputs[len(model.inputs)-1]
-	if strings.Count(lastInput, answer) != 1 {
-		t.Fatalf("retry input should contain answer once: %q", lastInput)
+	if len(resumed.ClarificationTurns) != 1 || resumed.ClarificationTurns[0].Answer != answer {
+		t.Fatalf("answer was not retained through degrade: %#v", resumed.ClarificationTurns)
 	}
 }
 

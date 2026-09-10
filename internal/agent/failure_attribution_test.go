@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -38,5 +39,31 @@ func TestIsRetryableRunErrorContract(t *testing.T) {
 	wrapped := fmt.Errorf("wrapped: %w", retryableTestError{})
 	if !isRetryableRunError(wrapped) {
 		t.Fatal("wrapped retryable error was not recognized through errors.As")
+	}
+}
+
+type failingExtractLLM struct{ err error }
+
+func (f failingExtractLLM) Extract(context.Context, string) (domain.Extraction, error) {
+	return domain.Extraction{}, f.err
+}
+func (f failingExtractLLM) GenerateQuestions(context.Context, domain.QuestionInput) (domain.QuestionSet, error) {
+	return domain.QuestionSet{}, nil
+}
+
+// A re-extraction failure on a later round must degrade to the confirmed facts,
+// not fail the run and burn the retry budget.
+func TestExtractNodeDegradesOnReextractFailure(t *testing.T) {
+	r := &Runner{llm: failingExtractLLM{err: retryableTestError{}}, now: func() time.Time { return time.Time{} }}
+	state := workflowState{Session: domain.Session{
+		ClarificationCount: 1,
+		Facts:              []domain.Fact{{Category: "symptom", Content: "饭后胃痛", SourceQuote: "饭后胃痛"}},
+	}}
+	next, err := r.extractNode(context.Background(), state)
+	if err != nil {
+		t.Fatalf("extractNode failed instead of degrading on a retryable re-extract error: %v", err)
+	}
+	if len(next.Session.Facts) != 1 || next.Session.Facts[0].SourceQuote != "饭后胃痛" {
+		t.Fatalf("confirmed facts were lost during degrade: %#v", next.Session.Facts)
 	}
 }
