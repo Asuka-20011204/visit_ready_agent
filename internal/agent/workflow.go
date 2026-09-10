@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"unicode"
@@ -72,6 +73,7 @@ func (r *Runner) extractNode(ctx context.Context, state workflowState) (workflow
 		next.priorProfiles = cloneSymptomProfiles(next.Session.SymptomProfiles)
 		next.priorTimeline = append([]domain.TimelineEvent(nil), next.Session.Timeline...)
 		next.priorMissing = append([]string(nil), next.Session.MissingFields...)
+		next.priorMissingItems = append([]domain.MissingField(nil), next.Session.MissingFieldItems...)
 		next.priorGoal = next.Session.VisitGoal
 	}
 
@@ -89,7 +91,8 @@ func (r *Runner) extractNode(ctx context.Context, state workflowState) (workflow
 	next.Session.SymptomProfiles = cloneSymptomProfiles(extraction.SymptomProfiles)
 	next.Session.Timeline = append([]domain.TimelineEvent(nil), extraction.Timeline...)
 	next.Session.RiskSignals = append([]domain.RiskSignal(nil), extraction.RiskSignals...)
-	next.Session.MissingFields = safeMissingFields(extraction.MissingFields)
+	next.Session.MissingFieldItems = append([]domain.MissingField(nil), extraction.MissingFieldItems...)
+	next.Session.MissingFields = missingFieldLabels(next.Session.MissingFieldItems, extraction.MissingFields)
 	next.Session.ClarificationQuestions = append([]string(nil), extraction.ClarificationQuestions...)
 	next.Session.ClarificationPrompts = append([]domain.Question(nil), extraction.ClarificationPrompts...)
 	next.Session.Uncertainties = append([]domain.Uncertainty(nil), extraction.Uncertainties...)
@@ -106,6 +109,7 @@ func (r *Runner) extractionValidatorNode(_ context.Context, state workflowState)
 		VisitGoal: next.Session.VisitGoal, Facts: next.Session.Facts,
 		SymptomProfiles: next.Session.SymptomProfiles, Timeline: next.Session.Timeline,
 		RiskSignals: next.Session.RiskSignals, MissingFields: next.Session.MissingFields,
+		MissingFieldItems:      next.Session.MissingFieldItems,
 		ClarificationQuestions: next.Session.ClarificationQuestions,
 		ClarificationPrompts:   next.Session.ClarificationPrompts,
 		SearchQueries:          next.SearchQueries, Uncertainties: next.Session.Uncertainties,
@@ -115,11 +119,17 @@ func (r *Runner) extractionValidatorNode(_ context.Context, state workflowState)
 		return workflowState{}, fmt.Errorf("all %d extracted facts failed evidence validation", rejected)
 	}
 	next.Session.Facts = mergeGroundedFacts(next.priorFacts, validated.Facts)
-	next.Session.SymptomProfiles = mergeSymptomProfiles(next.priorProfiles, validated.SymptomProfiles)
+	next.Session.SymptomProfiles = mergeSymptomProfiles(next.priorProfiles, validated.SymptomProfiles, latestTurnCorrection(next.Session.ClarificationTurns))
 	next.Session.SymptomProfiles = mergeClarificationSlots(next.Session.SymptomProfiles, next.Session.ClarificationTurns)
+	next.Session = mergeClarificationGlobals(next.Session, next.Session.ClarificationTurns)
 	next.Session.Timeline = mergeTimeline(next.priorTimeline, validated.Timeline)
-	missing := append(append([]string(nil), next.priorMissing...), validated.MissingFields...)
-	next.Session.MissingFields = reconcileMissingFields(missing, next.Session.SymptomProfiles)
+	if mergedItems := mergeMissingFieldItems(next.priorMissingItems, validated.MissingFieldItems); len(mergedItems) > 0 {
+		next.Session.MissingFieldItems = reconcileMissingFieldItems(mergedItems, next.Session.SymptomProfiles, next.Session)
+		next.Session.MissingFields = missingFieldLabels(next.Session.MissingFieldItems, nil)
+	} else {
+		missing := append(append([]string(nil), next.priorMissing...), validated.MissingFields...)
+		next.Session.MissingFields = reconcileMissingFields(missing, next.Session.SymptomProfiles, next.Session)
+	}
 	if goal := strings.TrimSpace(validated.VisitGoal); goal != "" {
 		next.Session.VisitGoal = goal
 	} else if next.priorGoal != "" {
@@ -184,8 +194,7 @@ func (r *Runner) evidenceNode(_ context.Context, state workflowState) (workflowS
 		}
 	}
 	if next.Session.ClarificationCount > 0 {
-		for _, field := range next.Session.MissingFields {
-			prompt := clarificationPromptForMissingField(field, next.Session)
+		for _, prompt := range missingFieldPrompts(next.Session) {
 			if prompt.Text == "" || !isSafeClarificationPrompt(prompt) {
 				continue
 			}
@@ -215,27 +224,100 @@ func (r *Runner) evidenceNode(_ context.Context, state workflowState) (workflowS
 	return next, nil
 }
 
-func clarificationPromptForMissingField(field string, session domain.Session) domain.Question {
-	subject := missingFieldSubject(field, session.SymptomProfiles)
-	if subject == "" {
-		return domain.Question{}
+// missingFieldPrompts builds deterministic follow-up questions. Categorized
+// fields drive the question directly; legacy free-text fields fall back to
+// keyword inference only when no categorized fields exist.
+func missingFieldPrompts(session domain.Session) []domain.Question {
+	prompts := make([]domain.Question, 0, len(session.MissingFieldItems)+len(session.MissingFields))
+	if len(session.MissingFieldItems) > 0 {
+		for _, item := range session.MissingFieldItems {
+			prompts = append(prompts, clarificationPromptForMissingField(item.Field, item.Category, session))
+		}
+		return prompts
 	}
+	for _, field := range session.MissingFields {
+		prompts = append(prompts, clarificationPromptForMissingField(field, "", session))
+	}
+	return prompts
+}
+
+func clarificationPromptForMissingField(field, category string, session domain.Session) domain.Question {
 	priority := uncertaintyPriority(field)
-	switch profileSlotForMissingField(field) {
+	subject := missingFieldSubject(field, session.SymptomProfiles)
+	switch missingFieldSlot(field, category) {
 	case "duration":
+		if subject == "" {
+			return domain.Question{}
+		}
 		return domain.Question{Text: subject + "每次大约持续多久？", Reason: "补全仍未确认的持续时间", Priority: priority, Category: "duration"}
 	case "frequency":
+		if subject == "" {
+			return domain.Question{}
+		}
 		return domain.Question{Text: subject + "一天或一周大约出现几次？", Reason: "补全仍未确认的发生频率", Priority: priority, Category: "frequency"}
 	case "onset":
+		if subject == "" {
+			return domain.Question{}
+		}
 		return domain.Question{Text: subject + "大约从什么时候开始？", Reason: "补全仍未确认的开始时间", Priority: priority, Category: "timeline"}
 	case "trigger":
+		if subject == "" {
+			return domain.Question{}
+		}
 		return domain.Question{Text: subject + "在什么情况下更明显，怎样会缓解？", Reason: "补全仍未确认的诱因或缓解因素", Priority: priority, Category: "trigger"}
 	case "severity":
+		if subject == "" {
+			return domain.Question{}
+		}
 		return domain.Question{Text: subject + "目前对日常活动有什么影响？", Reason: "补全仍未确认的日常影响", Priority: priority, Category: "severity"}
 	case "associated":
+		if subject == "" {
+			return domain.Question{}
+		}
 		return domain.Question{Text: subject + "出现时还伴有哪些不适？", Reason: "补全仍未确认的伴随表现", Priority: priority, Category: "associated_symptom"}
+	}
+	switch category {
+	case "medication":
+		return domain.Question{Text: missingFieldQuestionText(field, "用药"), Reason: "补全仍未确认的用药信息", Priority: priority, Category: "medication"}
+	case "allergy":
+		return domain.Question{Text: missingFieldQuestionText(field, "过敏"), Reason: "补全仍未确认的过敏信息", Priority: priority, Category: "allergy"}
+	case "history":
+		return domain.Question{Text: missingFieldQuestionText(field, "既往史"), Reason: "补全仍未确认的既往情况", Priority: priority, Category: "history"}
+	case "safety":
+		return domain.Question{Text: missingFieldQuestionText(field, "安全相关"), Reason: "补全仍未确认的安全相关信息", Priority: priority, Category: "safety"}
+	}
+	return domain.Question{}
+}
+
+func missingFieldQuestionText(field, fallback string) string {
+	field = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(field), "？?"))
+	if field == "" {
+		return "关于" + fallback + "，还需要补充哪些信息？"
+	}
+	return field + "？"
+}
+
+// missingFieldSlot resolves a field to its profile slot, preferring the
+// extraction-provided category over keyword inference. Global and unclassified
+// categories never fall back to inference.
+func missingFieldSlot(field, category string) string {
+	switch category {
+	case "onset":
+		return "onset"
+	case "duration":
+		return "duration"
+	case "frequency":
+		return "frequency"
+	case "trigger":
+		return "trigger"
+	case "severity":
+		return "severity"
+	case "associated":
+		return "associated"
+	case "medication", "allergy", "history", "safety", "other":
+		return ""
 	default:
-		return domain.Question{}
+		return profileSlotForMissingField(field)
 	}
 }
 
@@ -620,11 +702,11 @@ func mergeGroundedFacts(prior, current []domain.Fact) []domain.Fact {
 	return deduplicateFacts(append(append([]domain.Fact(nil), prior...), current...))
 }
 
-func reconcileMissingFields(fields []string, profiles []domain.SymptomProfile) []string {
+func reconcileMissingFields(fields []string, profiles []domain.SymptomProfile, session domain.Session) []string {
 	result := make([]string, 0, len(fields))
 	for _, field := range fields {
 		field = strings.TrimSpace(field)
-		if field == "" || missingFieldCovered(field, profiles) {
+		if field == "" || missingFieldCovered(field, "", profiles, session) {
 			continue
 		}
 		result = append(result, field)
@@ -632,37 +714,366 @@ func reconcileMissingFields(fields []string, profiles []domain.SymptomProfile) [
 	return safeMissingFields(result)
 }
 
+func missingFieldLabels(items []domain.MissingField, legacy []string) []string {
+	if len(items) > 0 {
+		labels := make([]string, 0, len(items))
+		for _, item := range items {
+			if field := strings.TrimSpace(item.Field); field != "" {
+				labels = append(labels, field)
+			}
+		}
+		return labels
+	}
+	return append([]string(nil), legacy...)
+}
+
+func mergeMissingFieldItems(prior, current []domain.MissingField) []domain.MissingField {
+	merged := append([]domain.MissingField(nil), prior...)
+	byField := make(map[string]int, len(merged))
+	for index, item := range merged {
+		byField[normalizeFactEvidence(item.Field)] = index
+	}
+	for _, item := range current {
+		key := normalizeFactEvidence(item.Field)
+		if key == "" {
+			continue
+		}
+		if index, exists := byField[key]; exists {
+			if merged[index].Category == "" && item.Category != "" {
+				merged[index].Category = item.Category
+			}
+			continue
+		}
+		byField[key] = len(merged)
+		merged = append(merged, item)
+	}
+	return merged
+}
+
+func reconcileMissingFieldItems(items []domain.MissingField, profiles []domain.SymptomProfile, session domain.Session) []domain.MissingField {
+	result := make([]domain.MissingField, 0, len(items))
+	for _, item := range items {
+		if missingFieldCovered(item.Field, item.Category, profiles, session) {
+			continue
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+// clarificationSlotSpec is the deterministic write-back path for one question
+// category. Every category the missing-field loop can produce must have a spec;
+// see TestEveryMissingFieldCategoryIsMergeable.
+type clarificationSlotSpec struct {
+	symptom string // profile slot: duration / frequency / onset / trigger / severity / pattern / associated
+	global  string // session slot: medications / allergies / history / safety
+	valueRe *regexp.Regexp
+}
+
+func clarificationSlotSpecFor(category string) (clarificationSlotSpec, bool) {
+	switch category {
+	case "duration":
+		return clarificationSlotSpec{symptom: "duration", valueRe: clarificationDurationValuePattern}, true
+	case "frequency":
+		return clarificationSlotSpec{symptom: "frequency", valueRe: frequencyValidationPattern}, true
+	case "timeline":
+		return clarificationSlotSpec{symptom: "onset", valueRe: onsetValidationPattern}, true
+	case "trigger":
+		return clarificationSlotSpec{symptom: "trigger"}, true
+	case "severity":
+		return clarificationSlotSpec{symptom: "severity"}, true
+	case "pattern":
+		return clarificationSlotSpec{symptom: "pattern"}, true
+	case "associated_symptom", "symptom_detail", "associated":
+		return clarificationSlotSpec{symptom: "associated"}, true
+	case "medication", "medication_history":
+		return clarificationSlotSpec{global: "medications"}, true
+	case "allergy":
+		return clarificationSlotSpec{global: "allergies"}, true
+	case "history":
+		return clarificationSlotSpec{global: "history"}, true
+	case "safety":
+		return clarificationSlotSpec{global: "safety"}, true
+	default:
+		return clarificationSlotSpec{}, false
+	}
+}
+
+func clarificationSlotValue(category, answer string) (string, string) {
+	spec, ok := clarificationSlotSpecFor(category)
+	if !ok || spec.symptom == "" {
+		return "", ""
+	}
+	answer = strings.TrimSpace(answer)
+	if answer == "" || isSkipAnswer(answer) || isUncertainAnswer(answer) {
+		return "", ""
+	}
+	if spec.valueRe != nil {
+		if match := spec.valueRe.FindString(answer); match != "" {
+			return spec.symptom, strings.TrimSpace(match)
+		}
+		return "", ""
+	}
+	return spec.symptom, clipFreeTextValue(answer)
+}
+
+// clarificationSlotValues returns every profile slot an answer deterministically
+// fills. The trigger question asks about both aggravating and relieving factors,
+// so its answer is split into two slots.
+func clarificationSlotValues(category, answer string) map[string]string {
+	spec, ok := clarificationSlotSpecFor(category)
+	if !ok || spec.symptom == "" {
+		return nil
+	}
+	answer = strings.TrimSpace(answer)
+	if answer == "" || isSkipAnswer(answer) || isUncertainAnswer(answer) {
+		return nil
+	}
+	if spec.valueRe != nil {
+		match := spec.valueRe.FindString(answer)
+		if match == "" {
+			return nil
+		}
+		return map[string]string{spec.symptom: strings.TrimSpace(match)}
+	}
+	if spec.symptom == "trigger" {
+		triggerValue, relievingValue := splitTriggerAndRelieving(answer)
+		values := make(map[string]string, 2)
+		if triggerValue != "" {
+			values["trigger"] = triggerValue
+		}
+		if relievingValue != "" {
+			values["relieving"] = relievingValue
+		}
+		return values
+	}
+	return map[string]string{spec.symptom: clipFreeTextValue(answer)}
+}
+
+func clipFreeTextValue(answer string) string {
+	clauses := splitAnswerClauses(answer)
+	limit := min(3, len(clauses))
+	return clipRunes(strings.Join(clauses[:limit], "，"), 200)
+}
+
+func splitTriggerAndRelieving(answer string) (string, string) {
+	triggerClauses := make([]string, 0, 2)
+	relievingClauses := make([]string, 0, 2)
+	for _, clause := range splitAnswerClauses(answer) {
+		switch {
+		case hasAny(clause, "缓解", "好转", "减轻", "舒服", "改善", "恢复", "休息", "热敷", "按摩", "冰敷", "消失", "甩一甩", "活动活动"):
+			relievingClauses = append(relievingClauses, clause)
+		case hasAny(clause, "明显", "加重", "诱发", "出现", "发作", "活动", "姿势", "鼠标", "打字", "压", "抬", "转", "弯", "时", "后"):
+			triggerClauses = append(triggerClauses, clause)
+		default:
+			triggerClauses = append(triggerClauses, clause)
+		}
+	}
+	return clipRunes(strings.Join(triggerClauses, "，"), 160), clipRunes(strings.Join(relievingClauses, "，"), 160)
+}
+
+func splitAnswerClauses(answer string) []string {
+	clauses := strings.FieldsFunc(answer, func(char rune) bool {
+		return strings.ContainsRune("。！？!?；;，,、\n", char)
+	})
+	result := make([]string, 0, len(clauses))
+	for _, clause := range clauses {
+		if clause = strings.TrimSpace(clause); clause != "" {
+			result = append(result, clause)
+		}
+	}
+	return result
+}
+
+func clipRunes(value string, limit int) string {
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	return string(runes[:limit])
+}
+
 func mergeClarificationSlots(profiles []domain.SymptomProfile, turns []domain.ClarificationTurn) []domain.SymptomProfile {
 	merged := cloneSymptomProfiles(profiles)
 	for _, turn := range turns {
 		for _, question := range turn.Questions {
-			field, value := clarificationSlotValue(question.Category, turn.Answer)
-			if field == "" || value == "" || valueIsUncertain(turn.Answer, value) {
+			values := clarificationSlotValues(question.Category, turn.Answer)
+			if len(values) == 0 {
 				continue
 			}
 			targets := clarificationTargets(question.Text, merged)
+			if len(targets) == 0 {
+				continue
+			}
+			correction := containsAnyPhrase(turn.Answer, "更正", "为准", "说错了", "记错了")
 			for _, index := range targets {
-				if !profileSlotFilled(merged[index], field) || containsAnyPhrase(turn.Answer, "更正", "为准", "说错了", "记错了") {
+				for field, value := range values {
+					if field == "associated" {
+						if correction {
+							merged[index].AssociatedSymptoms = nil
+						}
+						value = clipRunes(value, 120)
+						if len(merged[index].AssociatedSymptoms) < 4 && !symptomCoveredByExisting(merged[index].AssociatedSymptoms, value) {
+							merged[index].AssociatedSymptoms = appendUniqueStrings(merged[index].AssociatedSymptoms, []string{value})
+						}
+						continue
+					}
+					if !correction && strings.TrimSpace(profileFieldValue(merged[index], field)) != "" {
+						continue
+					}
 					setProfileSlot(&merged[index], field, value)
 				}
-				merged[index].EvidenceQuotes = appendUniqueStrings(merged[index].EvidenceQuotes, []string{turn.Answer})
+				merged[index].EvidenceQuotes = appendUniqueStrings(merged[index].EvidenceQuotes, shortestEvidenceClauses(turn.Answer, values))
 			}
 		}
 	}
 	return merged
 }
 
-func clarificationSlotValue(category, answer string) (string, string) {
-	switch category {
-	case "duration":
-		return "duration", strings.TrimSpace(clarificationDurationValuePattern.FindString(answer))
-	case "frequency":
-		return "frequency", strings.TrimSpace(frequencyValuePattern.FindString(answer))
-	case "timeline":
-		return "onset", strings.TrimSpace(onsetValuePattern.FindString(answer))
-	default:
-		return "", ""
+func shortestEvidenceClauses(answer string, values map[string]string) []string {
+	clauses := splitAnswerClauses(answer)
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		shortest := ""
+		for _, clause := range clauses {
+			if isGroundedValue(clause, value) && (shortest == "" || len([]rune(clause)) < len([]rune(shortest))) {
+				shortest = clause
+			}
+		}
+		if shortest == "" {
+			shortest = clipRunes(answer, 200)
+		}
+		result = append(result, strings.TrimSpace(shortest))
 	}
+	return result
+}
+
+func profileFieldValue(profile domain.SymptomProfile, field string) string {
+	switch field {
+	case "duration":
+		return profile.Duration
+	case "frequency":
+		return profile.Frequency
+	case "onset":
+		return profile.Onset
+	case "trigger":
+		return profile.Trigger
+	case "relieving":
+		return profile.RelievingFactors
+	case "severity":
+		return profile.Severity
+	case "pattern":
+		return profile.Pattern
+	default:
+		return ""
+	}
+}
+
+// mergeClarificationGlobals writes answers for medication / allergy / history /
+// safety questions into explicit session slots. Denials are recorded so a
+// covered field can be told apart from one that was never answered.
+func mergeClarificationGlobals(session domain.Session, turns []domain.ClarificationTurn) domain.Session {
+	next := session
+	for _, turn := range turns {
+		for _, question := range turn.Questions {
+			spec, ok := clarificationSlotSpecFor(question.Category)
+			if !ok || spec.global == "" {
+				continue
+			}
+			answer := strings.TrimSpace(turn.Answer)
+			if answer == "" || isSkipAnswer(answer) || isUncertainAnswer(answer) {
+				continue
+			}
+			if spec.global == "safety" {
+				denialClauses, positiveClauses := partitionGlobalAnswer(answer)
+				for _, clause := range denialClauses {
+					next.DeniedConditions = appendUniqueStrings(next.DeniedConditions, []string{"否认安全相关：" + clipRunes(clause, 160)})
+				}
+				for _, clause := range positiveClauses {
+					clause = clipRunes(clause, 160)
+					if len([]rune(clause)) >= 2 {
+						next.SafetyNotes = appendUniqueStrings(next.SafetyNotes, []string{clause})
+					}
+				}
+				continue
+			}
+			label := globalSlotLabel(spec.global)
+			denialClauses, positiveClauses := partitionGlobalAnswer(answer)
+			if len(positiveClauses) == 0 {
+				if len(denialClauses) > 0 {
+					next.DeniedConditions = appendUniqueStrings(next.DeniedConditions, []string{"否认" + label + "：" + clipRunes(answer, 160)})
+				}
+				continue
+			}
+			for _, clause := range denialClauses {
+				next.DeniedConditions = appendUniqueStrings(next.DeniedConditions, []string{"否认" + label + "：" + clipRunes(clause, 160)})
+			}
+			positive := clipRunes(strings.Join(positiveClauses, "，"), 200)
+			switch spec.global {
+			case "medications":
+				next.Medications = appendUniqueStrings(next.Medications, []string{positive})
+			case "allergies":
+				next.Allergies = appendUniqueStrings(next.Allergies, []string{positive})
+			case "history":
+				for _, clause := range positiveClauses {
+					clause = clipRunes(clause, 160)
+					if hasAny(clause, "外伤", "骨折", "手术", "摔伤", "扭伤") {
+						next.TraumaHistory = appendUniqueStrings(next.TraumaHistory, []string{clause})
+					} else {
+						next.ChronicConditions = appendUniqueStrings(next.ChronicConditions, []string{clause})
+					}
+				}
+			}
+		}
+	}
+	return next
+}
+
+func partitionGlobalAnswer(answer string) (denied, positive []string) {
+	for _, clause := range splitAnswerClauses(answer) {
+		if clauseDenies(clause) {
+			denied = append(denied, clause)
+			continue
+		}
+		positive = append(positive, clause)
+	}
+	return denied, positive
+}
+
+// symptomCoveredByExisting avoids duplicating an extracted symptom with a
+// longer phrase that already contains it (e.g. "头晕" already covers
+// "发作时还伴有头晕").
+func symptomCoveredByExisting(existing []string, value string) bool {
+	normalized := normalizeFactEvidence(value)
+	for _, symptom := range existing {
+		key := normalizeFactEvidence(symptom)
+		if key == "" || len([]rune(key)) < 2 {
+			continue
+		}
+		if strings.Contains(normalized, key) || strings.Contains(key, normalized) {
+			return true
+		}
+	}
+	return false
+}
+
+func globalSlotLabel(global string) string {
+	switch global {
+	case "medications":
+		return "用药"
+	case "allergies":
+		return "过敏"
+	case "history":
+		return "既往疾病"
+	case "safety":
+		return "安全相关"
+	default:
+		return "既往情况"
+	}
+}
+
+func clauseDenies(clause string) bool {
+	return containsAnyPhrase(clause, "否认", "都没有", "都没有过", "从没有", "从来没", "没有", "没吃", "没用", "未用", "没在吃", "没在服", "未服", "无过敏", "无药物", "无慢性", "无既往", "没过敏", "不过敏")
 }
 
 func clarificationTargets(question string, profiles []domain.SymptomProfile) []int {
@@ -689,19 +1100,38 @@ func setProfileSlot(profile *domain.SymptomProfile, field, value string) {
 		profile.Frequency = value
 	case "onset":
 		profile.Onset = value
+	case "trigger":
+		profile.Trigger = value
+	case "relieving":
+		profile.RelievingFactors = value
+	case "severity":
+		profile.Severity = value
+	case "pattern":
+		profile.Pattern = value
 	}
 }
 
-func missingFieldCovered(field string, profiles []domain.SymptomProfile) bool {
+func missingFieldCovered(field, category string, profiles []domain.SymptomProfile, session domain.Session) bool {
+	slot := missingFieldSlot(field, category)
+	if slot == "" {
+		switch category {
+		case "medication":
+			return len(session.Medications) > 0 || deniedLabelPresent(session, "用药")
+		case "allergy":
+			return len(session.Allergies) > 0 || deniedLabelPresent(session, "过敏")
+		case "history":
+			return len(session.ChronicConditions) > 0 || len(session.TraumaHistory) > 0 || deniedLabelPresent(session, "既往疾病")
+		case "safety":
+			return len(session.SafetyNotes) > 0 || deniedLabelPresent(session, "安全相关")
+		default:
+			return globalFieldCovered(field, session)
+		}
+	}
 	targeted := make(map[string]struct{})
 	for _, profile := range profiles {
 		if profile.Name != "" && strings.Contains(field, profile.Name) {
 			targeted[normalizeFactEvidence(profile.Name)] = struct{}{}
 		}
-	}
-	slot := profileSlotForMissingField(field)
-	if slot == "" {
-		return false
 	}
 	for _, profile := range profiles {
 		if len(targeted) > 0 {
@@ -731,6 +1161,31 @@ func missingFieldCovered(field string, profiles []domain.SymptomProfile) bool {
 	return len(profiles) > 0
 }
 
+// globalFieldCovered treats medication / allergy / history fields as covered
+// once the user answered them, including explicit denials such as "没有糖尿病".
+func globalFieldCovered(field string, session domain.Session) bool {
+	switch {
+	case hasAny(field, "药"):
+		return len(session.Medications) > 0 || deniedLabelPresent(session, "用药")
+	case hasAny(field, "过敏"):
+		return len(session.Allergies) > 0 || deniedLabelPresent(session, "过敏")
+	case hasAny(field, "史", "既往", "糖尿病", "甲状腺", "关节炎", "外伤", "慢性病", "高血压", "疾病", "手术"):
+		return len(session.ChronicConditions) > 0 || len(session.TraumaHistory) > 0 || deniedLabelPresent(session, "既往疾病")
+	default:
+		return false
+	}
+}
+
+func deniedLabelPresent(session domain.Session, label string) bool {
+	prefix := "否认" + label
+	for _, entry := range session.DeniedConditions {
+		if strings.HasPrefix(entry, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func profileSlotForMissingField(field string) string {
 	switch {
 	case strings.Contains(field, "开始") || strings.Contains(field, "起病"):
@@ -739,7 +1194,8 @@ func profileSlotForMissingField(field string) string {
 		return "duration"
 	case strings.Contains(field, "频率") || strings.Contains(field, "次数"):
 		return "frequency"
-	case strings.Contains(field, "诱因") || strings.Contains(field, "加重") || strings.Contains(field, "缓解") || strings.Contains(field, "减轻"):
+	case strings.Contains(field, "诱因") || strings.Contains(field, "加重") || strings.Contains(field, "缓解") || strings.Contains(field, "减轻") ||
+		strings.Contains(field, "休息") || strings.Contains(field, "热敷") || strings.Contains(field, "护腕") || strings.Contains(field, "按摩") || strings.Contains(field, "冰敷"):
 		return "trigger"
 	case strings.Contains(field, "程度") || strings.Contains(field, "严重") || strings.Contains(field, "影响"):
 		return "severity"
@@ -750,7 +1206,14 @@ func profileSlotForMissingField(field string) string {
 	}
 }
 
-func mergeSymptomProfiles(prior, current []domain.SymptomProfile) []domain.SymptomProfile {
+func latestTurnCorrection(turns []domain.ClarificationTurn) bool {
+	if len(turns) == 0 {
+		return false
+	}
+	return containsAnyPhrase(turns[len(turns)-1].Answer, "更正", "为准", "说错了", "记错了")
+}
+
+func mergeSymptomProfiles(prior, current []domain.SymptomProfile, correction bool) []domain.SymptomProfile {
 	merged := cloneSymptomProfiles(prior)
 	byName := make(map[string]int, len(merged))
 	for index, profile := range merged {
@@ -762,7 +1225,7 @@ func mergeSymptomProfiles(prior, current []domain.SymptomProfile) []domain.Sympt
 			continue
 		}
 		if index, exists := byName[key]; exists {
-			merged[index] = mergeSymptomProfile(merged[index], incoming)
+			merged[index] = mergeSymptomProfile(merged[index], incoming, correction)
 			continue
 		}
 		byName[key] = len(merged)
@@ -771,7 +1234,7 @@ func mergeSymptomProfiles(prior, current []domain.SymptomProfile) []domain.Sympt
 	return merged
 }
 
-func mergeSymptomProfile(prior, incoming domain.SymptomProfile) domain.SymptomProfile {
+func mergeSymptomProfile(prior, incoming domain.SymptomProfile, correction bool) domain.SymptomProfile {
 	merged := prior
 	if strings.TrimSpace(incoming.Name) != "" {
 		merged.Name = incoming.Name
@@ -781,14 +1244,20 @@ func mergeSymptomProfile(prior, incoming domain.SymptomProfile) domain.SymptomPr
 	} else if normalizeFactEvidence(incoming.SourceQuote) != normalizeFactEvidence(merged.SourceQuote) {
 		merged.EvidenceQuotes = appendUniqueStrings(merged.EvidenceQuotes, []string{incoming.SourceQuote})
 	}
+	// Re-extraction may misassign a value to another slot; once a slot has a
+	// value it stays unless the user explicitly corrected it this round.
 	for field, value := range map[*string]string{
 		&merged.Onset: incoming.Onset, &merged.Duration: incoming.Duration, &merged.Frequency: incoming.Frequency,
 		&merged.Severity: incoming.Severity, &merged.Pattern: incoming.Pattern, &merged.Trigger: incoming.Trigger,
 		&merged.RelievingFactors: incoming.RelievingFactors,
 	} {
-		if strings.TrimSpace(value) != "" {
-			*field = value
+		if strings.TrimSpace(value) == "" {
+			continue
 		}
+		if !correction && strings.TrimSpace(*field) != "" {
+			continue
+		}
+		*field = value
 	}
 	merged.AssociatedSymptoms = appendUniqueStrings(merged.AssociatedSymptoms, incoming.AssociatedSymptoms)
 	merged.EvidenceQuotes = appendUniqueStrings(merged.EvidenceQuotes, incoming.EvidenceQuotes)
@@ -886,9 +1355,9 @@ func groundedSymptomProfiles(input string, profiles []domain.SymptomProfile, tur
 			}
 		}
 		profile.EvidenceQuotes = evidenceQuotes
-		profile.Onset = groundedProfileValue(profile, profile.Onset, "timeline", turns, len(profiles) == 1)
-		profile.Duration = groundedProfileValue(profile, profile.Duration, "duration", turns, len(profiles) == 1)
-		profile.Frequency = groundedProfileValue(profile, profile.Frequency, "frequency", turns, len(profiles) == 1)
+		profile.Onset = typedProfileValue(groundedProfileValue(profile, profile.Onset, "timeline", turns, len(profiles) == 1), onsetValidationPattern)
+		profile.Duration = typedProfileValue(groundedProfileValue(profile, profile.Duration, "duration", turns, len(profiles) == 1), clarificationDurationValuePattern)
+		profile.Frequency = typedProfileValue(groundedProfileValue(profile, profile.Frequency, "frequency", turns, len(profiles) == 1), frequencyValidationPattern)
 		profile.Severity = groundedProfileValue(profile, profile.Severity, "severity", turns, len(profiles) == 1)
 		profile.Pattern = groundedProfileValue(profile, profile.Pattern, "pattern", turns, len(profiles) == 1)
 		profile.Trigger = groundedProfileValue(profile, profile.Trigger, "trigger", turns, len(profiles) == 1)
@@ -903,6 +1372,18 @@ func groundedSymptomProfiles(input string, profiles []domain.SymptomProfile, tur
 		result = append(result, profile)
 	}
 	return result
+}
+
+// typedProfileValue keeps only the part of a grounded value that matches its
+// slot shape (e.g. "三周" in a duration slot is dropped entirely, and
+// "从三个月前开始" is trimmed to "三个月前"). An empty slot reads as unknown,
+// which is safer than carrying a misassigned value into the visit summary.
+func typedProfileValue(value string, pattern *regexp.Regexp) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return strings.TrimSpace(pattern.FindString(value))
 }
 
 func groundedProfileValue(profile domain.SymptomProfile, value, category string, turns []domain.ClarificationTurn, allowImplicitSubject bool) string {
@@ -1149,6 +1630,7 @@ func cloneWorkflowState(source workflowState) workflowState {
 		priorProfiles: cloneSymptomProfiles(source.priorProfiles),
 		priorTimeline: append([]domain.TimelineEvent(nil), source.priorTimeline...),
 		priorMissing:  append([]string(nil), source.priorMissing...),
+		priorMissingItems: append([]domain.MissingField(nil), source.priorMissingItems...),
 		priorGoal:     source.priorGoal,
 	}
 }

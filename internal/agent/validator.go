@@ -26,8 +26,27 @@ func validateExtraction(input string, candidate domain.Extraction, turns []domai
 	validated.Timeline = groundedTimeline(input, candidate.Timeline)
 	validated.RiskSignals = guard.DetectEmergencySignals(input)
 	validated.MissingFields = safeMissingFields(candidate.MissingFields)
+	validated.MissingFieldItems = safeMissingFieldItems(candidate.MissingFieldItems)
 	validated.VisitGoal = groundedVisitGoal(validated.SymptomProfiles)
 	return validated, len(rejected)
+}
+
+func safeMissingFieldItems(items []domain.MissingField) []domain.MissingField {
+	result := make([]domain.MissingField, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item.Field = strings.TrimSpace(item.Field)
+		if item.Field == "" || len([]rune(item.Field)) > 160 || guard.ContainsMedicalOverreach(item.Field) || len(guard.ScanPII(item.Field)) > 0 {
+			continue
+		}
+		key := normalizeFactEvidence(item.Category + "\x1f" + item.Field)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, item)
+	}
+	return result
 }
 
 func groundedVisitGoal(profiles []domain.SymptomProfile) string {

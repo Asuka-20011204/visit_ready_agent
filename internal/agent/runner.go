@@ -60,13 +60,14 @@ type Runner struct {
 }
 
 type workflowState struct {
-	Session       domain.Session
-	SearchQueries []string
-	priorFacts    []domain.Fact
-	priorProfiles []domain.SymptomProfile
-	priorTimeline []domain.TimelineEvent
-	priorMissing  []string
-	priorGoal     string
+	Session           domain.Session
+	SearchQueries     []string
+	priorFacts        []domain.Fact
+	priorProfiles     []domain.SymptomProfile
+	priorTimeline     []domain.TimelineEvent
+	priorMissing      []string
+	priorMissingItems []domain.MissingField
+	priorGoal         string
 }
 
 func NewRunner(cfg Config) (*Runner, error) {
@@ -334,6 +335,7 @@ func cloneSession(source domain.Session) domain.Session {
 	cloned.Timeline = append([]domain.TimelineEvent(nil), source.Timeline...)
 	cloned.RiskSignals = append([]domain.RiskSignal(nil), source.RiskSignals...)
 	cloned.MissingFields = append([]string(nil), source.MissingFields...)
+	cloned.MissingFieldItems = append([]domain.MissingField(nil), source.MissingFieldItems...)
 	cloned.ClarificationQuestions = append([]string(nil), source.ClarificationQuestions...)
 	cloned.ClarificationPrompts = append([]domain.Question(nil), source.ClarificationPrompts...)
 	cloned.ClarificationTurns = cloneClarificationTurns(source.ClarificationTurns)
@@ -342,6 +344,12 @@ func cloneSession(source domain.Session) domain.Session {
 	cloned.Sources = append([]domain.Source(nil), source.Sources...)
 	cloned.Uncertainties = append([]domain.Uncertainty(nil), source.Uncertainties...)
 	cloned.Contradictions = append([]domain.Contradiction(nil), source.Contradictions...)
+	cloned.Medications = append([]string(nil), source.Medications...)
+	cloned.Allergies = append([]string(nil), source.Allergies...)
+	cloned.ChronicConditions = append([]string(nil), source.ChronicConditions...)
+	cloned.TraumaHistory = append([]string(nil), source.TraumaHistory...)
+	cloned.SafetyNotes = append([]string(nil), source.SafetyNotes...)
+	cloned.DeniedConditions = append([]string(nil), source.DeniedConditions...)
 	cloned.ConversationSummary = source.ConversationSummary
 	cloned.ConversationSummary.Confirmed = append([]string(nil), source.ConversationSummary.Confirmed...)
 	cloned.ConversationSummary.OpenThreads = append([]string(nil), source.ConversationSummary.OpenThreads...)

@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Fact struct {
 	Category    string `json:"category"`
@@ -89,13 +92,40 @@ type InterviewState struct {
 	CompletionReason string `json:"completion_reason,omitempty"`
 }
 
+// MissingField is a categorized information gap produced by extraction. The
+// category drives deterministic question generation and coverage checks, so
+// the agent never has to guess a slot from free text.
+type MissingField struct {
+	Field    string `json:"field"`
+	Category string `json:"category,omitempty"`
+}
+
+// UnmarshalJSON accepts both the structured object form and the legacy plain
+// string form, so models that have not adopted the categorized schema keep
+// working (their fields simply carry no category).
+func (m *MissingField) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		m.Field = text
+		return nil
+	}
+	type alias MissingField
+	var item alias
+	if err := json.Unmarshal(data, &item); err != nil {
+		return err
+	}
+	*m = MissingField(item)
+	return nil
+}
+
 type Extraction struct {
 	VisitGoal              string              `json:"visit_goal"`
 	Facts                  []Fact              `json:"facts"`
 	SymptomProfiles        []SymptomProfile    `json:"symptom_profiles,omitempty"`
 	Timeline               []TimelineEvent     `json:"timeline,omitempty"`
 	RiskSignals            []RiskSignal        `json:"risk_signals,omitempty"`
-	MissingFields          []string            `json:"missing_fields"`
+	MissingFields          []string            `json:"-"`
+	MissingFieldItems      []MissingField      `json:"missing_fields"`
 	ClarificationQuestions []string            `json:"clarification_questions"`
 	ClarificationPrompts   []Question          `json:"clarification_prompts,omitempty"`
 	SearchQueries          []string            `json:"search_queries"`
@@ -214,6 +244,7 @@ type Session struct {
 	EmergencyMessage       string              `json:"emergency_message,omitempty"`
 	RejectedFactCount      int                 `json:"rejected_fact_count"`
 	MissingFields          []string            `json:"missing_fields"`
+	MissingFieldItems      []MissingField      `json:"missing_field_items,omitempty"`
 	ClarificationQuestions []string            `json:"clarification_questions"`
 	ClarificationPrompts   []Question          `json:"clarification_prompts,omitempty"`
 	Questions              []Question          `json:"questions"`
@@ -221,6 +252,12 @@ type Session struct {
 	Sources                []Source            `json:"sources"`
 	Uncertainties          []Uncertainty       `json:"uncertainties,omitempty"`
 	Contradictions         []Contradiction     `json:"contradictions,omitempty"`
+	Medications            []string            `json:"medications,omitempty"`
+	Allergies              []string            `json:"allergies,omitempty"`
+	ChronicConditions      []string            `json:"chronic_conditions,omitempty"`
+	TraumaHistory          []string            `json:"trauma_history,omitempty"`
+	SafetyNotes            []string            `json:"safety_notes,omitempty"`
+	DeniedConditions       []string            `json:"denied_conditions,omitempty"`
 	ConversationSummary    ConversationSummary `json:"conversation_summary,omitempty"`
 	InterviewState         InterviewState      `json:"interview_state,omitempty"`
 	Failure                *RunFailure         `json:"failure,omitempty"`

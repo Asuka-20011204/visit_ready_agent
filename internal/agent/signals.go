@@ -10,8 +10,13 @@ import (
 var (
 	durationValuePattern              = regexp.MustCompile(`(?:每次\s*(?:约|大约|大概)?|(?:约|大约|大概)?\s*持续)\s*[一二两三四五六七八九十半\d]+\s*(?:(?:到|至|-|~)\s*[一二两三四五六七八九十半\d]+\s*)?(?:秒钟?|分钟?|小时)`)
 	clarificationDurationValuePattern = regexp.MustCompile(`(?:每次)?\s*(?:约|大约|大概)?\s*(?:持续)?\s*[一二两三四五六七八九十半\d]+\s*(?:(?:到|至|-|~)\s*[一二两三四五六七八九十半\d]+\s*)?(?:秒钟?|分钟?|小时)`)
-	frequencyValuePattern             = regexp.MustCompile(`(?:每天|每晚|每周|一周|一天)[一二两三四五六七八九十\d]+次`)
+	frequencyValuePattern             = regexp.MustCompile(`(?:每天|每晚|每周|一周|一天)[一二两三四五六七八九十半\d]+次`)
+	frequencyValidationPattern        = regexp.MustCompile(`(?:每天|每晚|每周|一周|一天|每星期)\s*(?:约|大约|大概|差不多)?\s*[一二两三四五六七八九十半\d]+\s*(?:次|回)`)
 	onsetValuePattern                 = regexp.MustCompile(`(?:今天|昨天|前天|(?:近|最近)?[一二两三四五六七八九十\d]+(?:天|周|个月|月|年)(?:前|来))`)
+	// onsetValidationPattern also accepts "近一周"/"最近几天" without a
+	// trailing 前/来, but only when the 近/最近 prefix is present, so a bare
+	// "一天" inside a frequency answer cannot leak into the onset slot.
+	onsetValidationPattern = regexp.MustCompile(`(?:今天|昨天|前天|(?:近|最近)[一二两三四五六七八九十半几\d]+(?:天|周|个月|月|年)(?:前|来)?|(?:近|最近)?[一二两三四五六七八九十半几\d]+(?:天|周|个月|月|年)(?:前|来))`)
 )
 
 func deriveConversationSignals(session domain.Session) (domain.ConversationSummary, []domain.Uncertainty, []domain.Contradiction) {
@@ -44,15 +49,30 @@ func deriveConversationSignals(session domain.Session) (domain.ConversationSumma
 		}
 	}
 	contradictions := findContradictions(session)
-	confirmed := make([]string, 0, 5)
+	// One entry per symptom profile: the subject appears once and the details
+	// are joined, instead of repeating the subject for every detail.
+	confirmed := make([]string, 0, min(5, len(session.SymptomProfiles)))
 	for _, profile := range session.SymptomProfiles {
+		details := make([]string, 0, 7)
+		seenDetails := make(map[string]struct{}, 7)
 		for _, detail := range []string{profile.Onset, profile.Duration, profile.Frequency, profile.Severity, profile.Pattern, profile.Trigger, profile.RelievingFactors} {
-			if strings.TrimSpace(detail) != "" {
-				confirmed = append(confirmed, profile.Name+"："+detail)
+			detail = strings.TrimSpace(detail)
+			if detail == "" {
+				continue
 			}
-			if len(confirmed) == 5 {
-				break
+			key := normalizeFactEvidence(detail)
+			if _, exists := seenDetails[key]; exists {
+				continue
 			}
+			seenDetails[key] = struct{}{}
+			details = append(details, detail)
+		}
+		if len(details) == 0 {
+			continue
+		}
+		confirmed = append(confirmed, profile.Name+"："+clipRunes(strings.Join(details, "、"), 160))
+		if len(confirmed) == 5 {
+			break
 		}
 	}
 	open := make([]string, 0, len(uncertainties)+len(contradictions))

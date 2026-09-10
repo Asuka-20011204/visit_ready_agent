@@ -192,6 +192,25 @@ func sanitizeOptionalExtraction(input string, result domain.Extraction) domain.E
 			result.ClarificationQuestions = append(result.ClarificationQuestions, prompt.Text)
 		}
 	}
+
+	items := make([]domain.MissingField, 0, len(result.MissingFieldItems))
+	seenItems := make(map[string]struct{}, len(result.MissingFieldItems))
+	for _, item := range result.MissingFieldItems {
+		item.Field = strings.TrimSpace(item.Field)
+		if item.Field == "" {
+			continue
+		}
+		if !validMissingFieldCategory(item.Category) {
+			item.Category = "other"
+		}
+		key := strings.Join(strings.Fields(item.Category+"\x1f"+item.Field), " ")
+		if _, exists := seenItems[key]; exists {
+			continue
+		}
+		seenItems[key] = struct{}{}
+		items = append(items, item)
+	}
+	result.MissingFieldItems = items
 	return result
 }
 
@@ -475,12 +494,20 @@ func validateExtraction(input string, result domain.Extraction) error {
 	if len(result.ClarificationQuestions) > 3 {
 		return errors.New("extraction contains too many clarification questions")
 	}
-	if len(result.MissingFields) > 20 {
+	if len(result.MissingFields) > 20 || len(result.MissingFieldItems) > 20 {
 		return errors.New("extraction contains too many missing fields")
 	}
 	for _, field := range result.MissingFields {
 		if strings.TrimSpace(field) == "" || len([]rune(field)) > 160 || guard.ContainsMedicalOverreach(field) || len(guard.ScanPII(field)) > 0 {
 			return errors.New("extraction contains an unsafe missing field")
+		}
+	}
+	for _, item := range result.MissingFieldItems {
+		if strings.TrimSpace(item.Field) == "" || len([]rune(item.Field)) > 160 || guard.ContainsMedicalOverreach(item.Field) || len(guard.ScanPII(item.Field)) > 0 {
+			return errors.New("extraction contains an unsafe missing field")
+		}
+		if !validMissingFieldCategory(item.Category) {
+			return errors.New("extraction contains a missing field with an invalid category")
 		}
 	}
 	if len(result.ClarificationPrompts) > 3 {
@@ -576,6 +603,19 @@ func validQuestionCategory(category string) bool {
 	case "safety", "timeline", "symptom", "medication", "test", "visit",
 		"duration", "frequency", "severity", "pattern", "trigger", "measurement",
 		"associated_symptom", "medication_history", "allergy", "missing_detail", "symptom_detail":
+		return true
+	default:
+		return false
+	}
+}
+
+// validMissingFieldCategory shares its slot categories with the agent's
+// write-back table so every classified gap is either writable or explicitly
+// unclassified (other).
+func validMissingFieldCategory(category string) bool {
+	switch category {
+	case "", "other", "onset", "duration", "frequency", "severity", "pattern", "trigger",
+		"associated", "medication", "allergy", "history", "safety":
 		return true
 	default:
 		return false
