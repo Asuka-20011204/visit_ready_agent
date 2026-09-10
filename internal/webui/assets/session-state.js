@@ -1,7 +1,29 @@
 "use strict";
 
 const DEVICE_KEY_STORAGE_KEY = "visitready.device_key.v1";
+const ACCOUNT_SCOPE_STORAGE_KEY = "visitready.account_email.v1";
 let ephemeralDeviceKey = "";
+
+// Clears locally cached history and restore state when the signed-in account
+// changes, so records from a previous account never stay visible or mix in.
+function switchAccountScope(email) {
+	const scope = String(email || "").trim().toLowerCase();
+	let previous = null;
+	try {
+		previous = localStorage.getItem(ACCOUNT_SCOPE_STORAGE_KEY);
+		localStorage.setItem(ACCOUNT_SCOPE_STORAGE_KEY, scope);
+	} catch {
+		// Storage may be unavailable; fall back to in-memory comparison only.
+	}
+	const changed = previous !== null && previous !== scope;
+	if (!changed) return false;
+	historyIDs = [];
+	historySessions.clear();
+	writeHistoryIDs();
+	sessionStorage.removeItem(SESSION_STORAGE_KEY);
+	renderHistory();
+	return true;
+}
 
 function getDeviceKey() {
 	if (ephemeralDeviceKey) return ephemeralDeviceKey;
@@ -108,6 +130,7 @@ async function ensureAccountSession() {
 			return false;
 		}
 		const payload = await response.json();
+		switchAccountScope(payload?.data?.email);
 		showAccount(payload.data);
 		return true;
 	} catch {

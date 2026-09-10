@@ -689,10 +689,9 @@ body:has(#completed-panel:not([hidden])) .goal-input {
   padding-left: 0;
   box-shadow: none;
 }
-body:has(#completed-panel:not([hidden])) .context-strip,
-body:has(#completed-panel:not([hidden])) .legal-line,
 body:has(#completed-panel:not([hidden])) .composer-dock {
-  display: none;
+  position: static;
+  background: transparent;
 }
 body:has(#review-panel:not([hidden])) #thread-title,
 body:has(#completed-panel:not([hidden])) #thread-title,
@@ -748,7 +747,8 @@ body:has(#emergency-panel:not([hidden])) .emergency-actions {
 }
 body:has(#emergency-panel:not([hidden])) .composer-dock,
 body:has(#failed-panel:not([hidden])) .composer-dock {
-  display: none;
+  position: static;
+  background: transparent;
 }
 body:has(#failed-panel:not([hidden])) .failed-terminal {
   max-width: none;

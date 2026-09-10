@@ -988,6 +988,7 @@ async function submitAccountForm() {
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload?.error?.message || "账户操作失败。");
+    switchAccountScope(payload?.data?.email);
     showAccount(payload.data);
     ui.accountDialog.close();
     await hydrateServerHistory();
