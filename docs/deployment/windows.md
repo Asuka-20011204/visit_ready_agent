@@ -11,16 +11,16 @@
 - `SourceCommit`：该版本标签实际构建的 40 位 Git 提交 SHA。安装脚本用它核对镜像 OCI revision，并从同一提交下载 Compose。
 - `ImageDigest`：镜像仓库为该镜像内容生成的 `sha256:` 摘要。Docker Hub 和 GHCR 的摘要可能不同，必须使用与 `RegistryImage` 相同仓库的摘要。
 
-在 GitHub 页面打开仓库，依次进入 `Actions` -> `release-image` -> 选择成功的版本运行（例如 `v1.0.4`）-> `Summary`。页面底部有两个发布 Job：
+在 GitHub 页面打开仓库，依次进入 `Actions` -> `release-image` -> 选择成功的版本运行（例如 `v1.0.9`）-> `Summary`。页面底部有两个发布 Job：
 
 - `publish`：GHCR 的 `Source commit` 和 `Published digest`。
 - `publish-dockerhub`：Docker Hub 的 `Source commit` 和 `Published digest`。
 
-脚本默认使用 Docker Hub，所以应复制 `publish-dockerhub` 的 digest。当前 `v1.0.4` 可直接填写：
+脚本默认使用 Docker Hub，所以应复制 `publish-dockerhub` 的 digest。当前 `v1.0.9` 可直接填写：
 
 ```powershell
-$SourceCommit = '70dbb69b841c9039882b5ab52f0eff6fc3605c78'
-$ImageDigest = 'sha256:6a8132ecbb233061c8f11beaec569cc55422431ad68a3337ee34b4e900b494e1'
+$SourceCommit = 'bd270766ff17a1f8facb6603f86e0869d404e514'
+$ImageDigest = 'sha256:24f04241a1652d7ddba0cdbfe618c44fb49ee9e15a5f7a1b87478322c4a2da45'
 ```
 
 也可以安装 GitHub CLI 后在仓库目录查看发布日志：
@@ -30,18 +30,18 @@ gh run view 34389723434 --log |
   Select-String 'Source commit:|Published digest:'
 ```
 
-输出前缀为 `publish-dockerhub` 的摘要属于 Docker Hub；前缀为 `publish` 的摘要属于 GHCR。还可以用 `git rev-list -n 1 v1.0.4` 单独获取 `SourceCommit`，但生产部署仍应以成功发布运行显示的值为准。
+输出前缀为 `publish-dockerhub` 的摘要属于 Docker Hub；前缀为 `publish` 的摘要属于 GHCR。还可以用 `git rev-list -n 1 v1.0.9` 单独获取 `SourceCommit`，但生产部署仍应以成功发布运行显示的值为准。
 
 ## 首次 Demo
 
-先从 `main` 下载当前安装脚本，再部署不可变的 `v1.0.4` 镜像：
+先从 `main` 下载当前安装脚本，再部署不可变的 `v1.0.9` 镜像：
 
 ```powershell
 Invoke-WebRequest `
   "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-windows.ps1" `
   -OutFile bootstrap-windows.ps1
 Set-ExecutionPolicy -Scope Process Bypass
-.\bootstrap-windows.ps1 -Version 1.0.4 -Mode demo
+.\bootstrap-windows.ps1 -Version 1.0.9 -Mode demo
 ```
 
 打开 `http://127.0.0.1:8097`。Demo 不调用模型，不创建账户，适合先确认界面和容器环境。
@@ -51,13 +51,13 @@ Set-ExecutionPolicy -Scope Process Bypass
 本机 HTTP 调试可直接执行：
 
 ```powershell
-$SourceCommit = '70dbb69b841c9039882b5ab52f0eff6fc3605c78'
-$ImageDigest = 'sha256:6a8132ecbb233061c8f11beaec569cc55422431ad68a3337ee34b4e900b494e1'
+$SourceCommit = 'bd270766ff17a1f8facb6603f86e0869d404e514'
+$ImageDigest = 'sha256:24f04241a1652d7ddba0cdbfe618c44fb49ee9e15a5f7a1b87478322c4a2da45'
 Invoke-WebRequest `
   "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-windows.ps1" `
   -OutFile bootstrap-windows.ps1
 Set-ExecutionPolicy -Scope Process Bypass
-.\bootstrap-windows.ps1 -Version 1.0.4 -Mode live `
+.\bootstrap-windows.ps1 -Version 1.0.9 -Mode live `
   -ExpectedSourceCommit $SourceCommit `
   -ExpectedImageDigest $ImageDigest
 ```
@@ -65,9 +65,9 @@ Set-ExecutionPolicy -Scope Process Bypass
 如果已经从 `main` 下载过脚本，只需：
 
 ```powershell
-$SourceCommit = '70dbb69b841c9039882b5ab52f0eff6fc3605c78'
-$ImageDigest = 'sha256:6a8132ecbb233061c8f11beaec569cc55422431ad68a3337ee34b4e900b494e1'
-.\bootstrap-windows.ps1 -Version 1.0.4 -Mode live `
+$SourceCommit = 'bd270766ff17a1f8facb6603f86e0869d404e514'
+$ImageDigest = 'sha256:24f04241a1652d7ddba0cdbfe618c44fb49ee9e15a5f7a1b87478322c4a2da45'
+.\bootstrap-windows.ps1 -Version 1.0.9 -Mode live `
   -ExpectedSourceCommit $SourceCommit `
   -ExpectedImageDigest $ImageDigest
 ```
@@ -78,18 +78,18 @@ $ImageDigest = 'sha256:6a8132ecbb233061c8f11beaec569cc55422431ad68a3337ee34b4e90
 
 首次 live **不会**备份 MySQL。只有目录里已有 `.deployment-success` 时，脚本才会等待数据库健康，并用 TCP 连接 `127.0.0.1` 做升级前 dump。不要用镜像构建提交去下载安装脚本。
 
-## 把已有 Live 升到 1.0.4
+## 把已有 Live 升到 1.0.9
 
 已有 `%LOCALAPPDATA%\VisitReady` 且 `APP_MODE=live` 时，不要改 `.env`。先重新下载 `main` 上的安装脚本，再升级镜像：
 
 ```powershell
-$SourceCommit = '70dbb69b841c9039882b5ab52f0eff6fc3605c78'
-$ImageDigest = 'sha256:6a8132ecbb233061c8f11beaec569cc55422431ad68a3337ee34b4e900b494e1'
+$SourceCommit = 'bd270766ff17a1f8facb6603f86e0869d404e514'
+$ImageDigest = 'sha256:24f04241a1652d7ddba0cdbfe618c44fb49ee9e15a5f7a1b87478322c4a2da45'
 Invoke-WebRequest `
   "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-windows.ps1" `
   -OutFile bootstrap-windows.ps1
 Set-ExecutionPolicy -Scope Process Bypass
-.\bootstrap-windows.ps1 -Version 1.0.4 `
+.\bootstrap-windows.ps1 -Version 1.0.9 `
   -ExpectedSourceCommit $SourceCommit `
   -ExpectedImageDigest $ImageDigest
 ```
@@ -97,10 +97,10 @@ Set-ExecutionPolicy -Scope Process Bypass
 如果当前目录已经是仓库根目录，也可以直接调用仓库脚本：
 
 ```powershell
-$SourceCommit = '70dbb69b841c9039882b5ab52f0eff6fc3605c78'
-$ImageDigest = 'sha256:6a8132ecbb233061c8f11beaec569cc55422431ad68a3337ee34b4e900b494e1'
+$SourceCommit = 'bd270766ff17a1f8facb6603f86e0869d404e514'
+$ImageDigest = 'sha256:24f04241a1652d7ddba0cdbfe618c44fb49ee9e15a5f7a1b87478322c4a2da45'
 Set-ExecutionPolicy -Scope Process Bypass
-.\scripts\bootstrap-windows.ps1 -Version 1.0.4 `
+.\scripts\bootstrap-windows.ps1 -Version 1.0.9 `
   -ExpectedSourceCommit $SourceCommit `
   -ExpectedImageDigest $ImageDigest
 ```
@@ -131,16 +131,16 @@ mysqldump: Got error: 2002: Can't connect to local MySQL server through socket '
 
 ## 公网 Live
 
-从 GitHub Actions 的 `publish-dockerhub` 发布摘要复制 40 位源码提交和 `sha256:` 镜像摘要。安装脚本仍从 `main` 下载，镜像和 Compose 用发布摘要钉死。下面是可直接执行的 `v1.0.4` Docker Hub 示例：
+从 GitHub Actions 的 `publish-dockerhub` 发布摘要复制 40 位源码提交和 `sha256:` 镜像摘要。安装脚本仍从 `main` 下载，镜像和 Compose 用发布摘要钉死。下面是可直接执行的 `v1.0.9` Docker Hub 示例：
 
 ```powershell
-$SourceCommit = '70dbb69b841c9039882b5ab52f0eff6fc3605c78'
-$ImageDigest = 'sha256:6a8132ecbb233061c8f11beaec569cc55422431ad68a3337ee34b4e900b494e1'
+$SourceCommit = 'bd270766ff17a1f8facb6603f86e0869d404e514'
+$ImageDigest = 'sha256:24f04241a1652d7ddba0cdbfe618c44fb49ee9e15a5f7a1b87478322c4a2da45'
 Invoke-WebRequest `
   "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-windows.ps1" `
   -OutFile bootstrap-windows.ps1
 Set-ExecutionPolicy -Scope Process Bypass
-.\bootstrap-windows.ps1 -Version 1.0.4 -Mode live `
+.\bootstrap-windows.ps1 -Version 1.0.9 -Mode live `
   -AuthCookieSecure $true `
   -ExpectedSourceCommit $SourceCommit `
   -ExpectedImageDigest $ImageDigest
@@ -149,8 +149,8 @@ Set-ExecutionPolicy -Scope Process Bypass
 若改用 GHCR，则必须同时指定 GHCR 地址和它自己的摘要：
 
 ```powershell
-$ImageDigest = 'sha256:d0e4229c50f4f2b9b8a1178861f63b7bb7e4f3f25f3d6a0fc5b5fbf04b959743'
-.\bootstrap-windows.ps1 -Version 1.0.4 -Mode live `
+$ImageDigest = 'sha256:d85a5a06209e2af1c78d13c93eb7d2d43d59bfd5bec57b9da78794a2128aa08d'
+.\bootstrap-windows.ps1 -Version 1.0.9 -Mode live `
   -RegistryImage 'ghcr.io/asuka-20011204/visit-ready-agent' `
   -AuthCookieSecure $true `
   -ExpectedSourceCommit $SourceCommit `
@@ -184,7 +184,7 @@ $ImageDigest = 'sha256:caa353cd12a2912e58f45b6d5fe3b5f2d96f906dda0840261cc9b437e
 ## 自定义目录或端口
 
 ```powershell
-.\bootstrap-windows.ps1 -Version 1.0.4 -Mode live `
+.\bootstrap-windows.ps1 -Version 1.0.9 -Mode live `
   -InstallDir 'D:\VisitReady' -AppPort 9007
 ```
 

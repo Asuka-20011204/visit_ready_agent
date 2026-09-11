@@ -7,8 +7,8 @@
 安装脚本从 `main` 下载；应用镜像和 Compose 仍由发布摘要中的提交 SHA 与 digest 固定。不要用镜像构建提交去下载安装脚本。
 
 ```bash
-SOURCE_COMMIT='70dbb69b841c9039882b5ab52f0eff6fc3605c78'
-IMAGE_DIGEST='sha256:6a8132ecbb233061c8f11beaec569cc55422431ad68a3337ee34b4e900b494e1'
+SOURCE_COMMIT='bd270766ff17a1f8facb6603f86e0869d404e514'
+IMAGE_DIGEST='sha256:24f04241a1652d7ddba0cdbfe618c44fb49ee9e15a5f7a1b87478322c4a2da45'
 curl --proto '=https' --proto-redir '=https' -fsSL \
   "https://raw.githubusercontent.com/Asuka-20011204/visit_ready_agent/main/scripts/bootstrap-server.sh" \
   -o bootstrap-server.sh
@@ -17,7 +17,7 @@ sudo env INSTALL_DOCKER=true \
   EXPECTED_SOURCE_COMMIT="$SOURCE_COMMIT" \
   EXPECTED_IMAGE_DIGEST="$IMAGE_DIGEST" \
   REGISTRY_IMAGE=docker.io/asuka20011204/visit-ready-agent \
-  ./bootstrap-server.sh 1.0.4
+  ./bootstrap-server.sh 1.0.9
 ```
 
 `INSTALL_DOCKER=true` 会通过系统包安装 Docker Engine 与 Compose v2，目前仅支持已验证的 Ubuntu。Debian 和其他发行版先按 Docker 官方文档安装，再去掉该参数运行；部署、更新和回退逻辑本身不限制发行版。
@@ -31,7 +31,7 @@ sudo env INSTALL_DOCKER=true \
 ```bash
 sudo env APP_MODE=demo \
   REGISTRY_IMAGE=docker.io/asuka20011204/visit-ready-agent \
-  ./bootstrap-server.sh 1.0.4
+  ./bootstrap-server.sh 1.0.9
 ```
 
 Demo 和 live 必须使用不同的 `INSTALL_DIR`；已有部署不会被脚本静默切换模式。
